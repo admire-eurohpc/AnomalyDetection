@@ -3,6 +3,7 @@ import pandas as pd
 
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+from sklearn.linear_model import LogisticRegression
 
 
 def _pca(df: pd.DataFrame) -> [np.array, np.array]:
@@ -16,3 +17,7 @@ def _kmeans(arr: np.array) -> [np.array, np.array, np.array]:
     label = kmeans.fit_predict(out)
     centroids = kmeans.cluster_centers_
     return out, label, centroids
+
+def _logistic_regression(x_train: np.array, y_train: np.array, x_test: np.array, y_test:np.array):
+    clf = LogisticRegression(random_state=0).fit(x_train, y_train)
+    print(clf.score(x_test, y_test))
