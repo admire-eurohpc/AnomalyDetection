@@ -1,0 +1,166 @@
+Struktura:
+
+- meta  
+    - plugin: [typ api i slurma]  
+    - Slurm: [metadane o wersji Slurma]  
+- errors  
+    - pusto  
+- jobs   
+    - account [id lub nazwa]
+    - comment  
+        - administrator: [zawsze None]  
+        - job: [zawsze None]  
+        - system: [zawsze None]  
+    - allocation_nodes [liczba zaalokowanych węzłów]  
+    - array  
+        - job_id [95% rekordów ma 0, ~500 jobów ma jakieś id]   
+        - limits  [json z limitami - wszystkie takie same tzn max_running_tasks: 0]  
+        - task  [zawsze None]  
+        - task_id [None lub jakiś int jeśli job_id != 0]  
+    - association  
+        - account [id lub nazwa, 43 unique nazwy]  
+        - cluster [zawsze 'eagle']  
+        - partiton: [zawsze None]  
+        - user: [string nazwa usera, 56 unique nazwy]  
+    - constraints [zawsze None lub 'cascade']  
+    - container [zawsze None]  
+    - derived_exit_code 
+        - status [zawsze 'SUCCESS']
+        - return_code  [zawsze 0]  
+    - time 
+        - elapsed [elapsed time (int)]
+        - eligible [timestamp int]
+        - end [timestamp int]
+        - start [timestamp int] 
+        - submission [timestamp int]  
+        - suspended [zawsze 0]
+        - system  
+            - seconds [zawsze 0]
+            - microseconds [zawsze 0]
+        - limit [int, 35 unique wartości]  
+        - total  
+            - seconds [zawsze 0]  
+            - microseconds [zawsze 0]
+        - user  
+            - seconds [zawsze 0]  
+            - microseconds [zawsze 0]  
+    - exit_code 
+        - status [zawsze 'SUCCESS']
+        - return_code  [zawsze 0]  
+    - flags [lista flag, pojawiają się trzy różne konfiguracje: ('CLEAR_SCHEDULING', 'STARTED_ON_SCHEDULE'): 12621 
+            ('CLEAR_SCHEDULING', 'STARTED_ON_BACKFILL'): 196, ('CLEAR_SCHEDULING', 'STARTED_ON_SUBMIT'): 7)
+            ]
+    - group [nazwa grupy. pojawiają się 'users': 12K, 'plgrid-users': 650, 'staff': 200, 'admins': 10]  
+    - het  
+        - job_id [zawsze 0]
+        - job_offset [zawsze None]  
+    - job_id [int id joba],
+    - name [string z nazwą]
+    - mcs
+        - label [zawsze '']
+    - nodes [lista nodeów np. e1788 lub e[1277-1279] lub e[1223-1225, 1555]]
+    - partition [nazwa partycji np. 'standard', 'fast', 'plgrid', 'altair', 'biology_night', 'tesla']
+    - priority [int z priority. ~400 różnych wartości]  
+    - qos [string Normal: 12k lub None:0.5k]  
+    - required
+        - CPUs [int z liczbą cpu. ~40 różnych wartości]
+        - memory [int z liczbą pamięci, ~40 różnych wartości]
+    - kill_request_user [zawsze None]
+    - reservation  
+        - id [zawsze 0]
+        - name [zawsze 0]  
+    - state  
+        - current [zawsze 'COMPLETED']
+        - reason [dwie opcje 'BeginTime': 0.3k lub 'None': 12.5k]
+    - steps 
+        [list of]
+        - nodes
+            - list [node names]
+            - count [int ile węzłów. Co ciekawe im dalszy step tym więcej nodeów]
+            - range [string slurmowe np. e[1699-1701,1703-1705], lub e1923]
+        - tres 
+            - requested
+                - max
+                    [list of]
+                    - type [string 'cpu', 'mem', 'energy', 'fs', 'vmem', 'pages']
+                    - name [string, pojawia się None a dla fs 'disk']
+                    - id [int id]
+                    - count [int count]
+                - min [tak samo jak max]
+                - average [tak samo jak max]
+                - total [tak samo jak max]
+            - consumed 
+                - max
+                    [list of]
+                    - type [string 'energy', 'fs']
+                    - name [string, pojawia się None a dla fs 'disk']
+                    - id [int count]
+                    - count [int count]
+                - min [tak samo jak max]
+                - average [tak samo jak max]
+                - total [tak samo jak max]
+            - allocated 
+                [list of]
+                - type [string 'cpu', 'mem', 'energy', 'node', 'billing']
+                - name [string None]
+                - id [int ]
+                - count [int ]
+        - time
+            - elapsed [elapsed time (int)]
+            - end [timestamp int]
+            - start [timestamp int]  
+            - suspended [zawsze 0]
+            - system  
+                - seconds [int ]
+                - microseconds [int ]
+            - total  
+                - seconds [int ]  
+                - microseconds [int ]
+            - user  
+                - seconds [int ]  
+                - microseconds [int ]  
+        - exit_code
+            - status [zawsze 'SUCCESS', raz 'SIGNALED']
+            - return_code [zawsze 0, raz 1]
+        - tasks
+            - count [int, im dalszy step na liście tym większy ten count]
+        - pid [zawsze NONE]
+        - CPU
+            - requested_frequency
+                - min [zawsze None]
+                - maxa [zawsze None]
+            - governor [list stringów ['Conservative', 'Performance', 'PowerSave', 'OnDemand', 'UserSpace']. Co ciekawe
+                        dla setep[0] brak tej listy ale dla step[>0] mamy listę z powyższymi wartościami (zawsze taka sama)]
+        - kill_request_user [zawsze None oprócz raz kiedy na drugim stepie pojawia się nazwa usera 'awojciechowski']
+        - state [string 'COMPLETED' lub 'FAILED' lub 'CANCELED'. 99.99% to 'COMPLETED']
+        - statistics
+            - CPU
+                - actual_frequency [int, różne wartości]
+            - energy
+                - consumed [int różne wartości]
+        - step
+            - job_id [int ]
+            - het
+                - component [zawsze None]
+            - id [string lub int - 'extern', 'batch', 0, 1, 2]
+            - name [string, na pierwszym indeksie 'batch' lub 'extern', dalej pojawiają się jakieś inne nazwy]
+        - task
+            - distribution [string 'Unknown', 'Cyclic', 'Block']
+
+    - tres
+        - allocated 
+            [list of]
+            - type [string np. cpu, mem, node, billing, energy]
+            - name [raczej None]
+            - id [int np. 1, 2, 4, 5]
+            - count [int ]
+        - requested
+            [list of]
+            - type [string np. cpu, mem, node, billing]
+            - name [raczej None]
+            - id [int np. 1, 2, 4, 5]
+            - count [int ]
+    - user [string z nazwą usera]
+    - working_directory [string z ścieżką do working directory, ponad 1k różnych ścieżek]
+
+
