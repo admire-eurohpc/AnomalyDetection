@@ -6,14 +6,12 @@ import numpy as np
 sys.path.append('../../')
 import os
 from admire.models.data_exploration import _logistic_regression
-from admire.preprocessing.data_preparation import prep_data, create_node_list
+from admire.preprocessing.data_preparation import prep_data, create_node_list, NumFiltering
 
 ROOT_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
 
-print(ROOT_DIR)
-
 def main():
-    df, df_raw = prep_data(os.path.join(ROOT_DIR, 'data', 'jobs_cleaned_redundant.csv'),
+    df, df_raw = prep_data(os.path.join(ROOT_DIR, 'data', 'jobs_flattened_cleaned.csv'),
                    ['steps-time-user-seconds', 'steps-tres-requested-max-cpu',
                     'steps-tres-requested-max-mem', 'steps-tres-requested-max-fs', 'steps-tres-consumed-max-energy',
                     'steps-tres-consumed-max-fs'])

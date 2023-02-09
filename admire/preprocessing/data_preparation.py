@@ -3,10 +3,48 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 import pandas as pd
 from typing import List
+import abc
 
 
  #TODO Napisac funkcje odfiltrowujaca wysokie pomiary steps-tres-consumed-max-energy
  #TODO Odfiltrowac kilkusekundowe joby
+
+class Filtering:
+    def __init__(self, df: pd.DataFrame, col_name : str):
+        self.df = df
+        self.col_name = col_name
+
+    @abc.abstractmethod
+    def filter_values(self):
+        pass
+
+class NumFiltering(Filtering):
+    def __init__(self, thresh_type: str, thresh: List, df: pd.DataFrame, col_name: str):
+        self.thresh = thresh
+        self.thresh_type = thresh_type
+        super(NumFiltering, self).__init__(df, col_name)
+
+
+    def filter_values(self):
+        if len(self.thresh) == 0:
+            raise ValueError('Provide a list with at least one filter value')
+        elif len(self.thresh) == 1:
+            if self.thresh_type == 'up':
+                self.df = self.df.loc[self.df[self.col_name] > self.thresh[0]]
+            elif self.thresh_type == 'down':
+                self.df = self.df.loc[self.df[self.col_name] < self.thresh[0]]
+            else:
+                raise ValueError('Threshold type takes only "up" or "down" value.')
+        elif len(self.thresh) == 2:
+            if self.thresh[0] < self.thresh[1]:
+                self.df = self.df.loc[(self.df[self.col_name] > self.thresh[0]) &
+                                      (self.df[self.col_name] > self.thresh[1])]
+            else:
+                raise ValueError('First threshold value should be lower than second.')
+        else:
+            raise ValueError('Provided too many filter values. Provide a list with 1 or 2 filter values')
+
+
 def prep_data(filename : str, col_list : List[str]) -> [np.array, pd.DataFrame]:
     df_raw = pd.read_csv(filename)
     df = df_raw[col_list]
