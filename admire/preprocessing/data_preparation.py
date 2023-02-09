@@ -15,45 +15,49 @@ class Filtering:
         self.col_name = col_name
 
     @abc.abstractmethod
-    def filter_values(self):
+    def filter_values(self, thresh_type: str, thresh: List,):
         pass
 
+
 class NumFiltering(Filtering):
-    def __init__(self, thresh_type: str, thresh: List, df: pd.DataFrame, col_name: str):
-        self.thresh = thresh
-        self.thresh_type = thresh_type
-        super(NumFiltering, self).__init__(df, col_name)
-
-
-    def filter_values(self):
-        if len(self.thresh) == 0:
+    def filter_values(self, thresh_type: str, thresh: List):
+        if len(thresh) == 0:
             raise ValueError('Provide a list with at least one filter value')
-        elif len(self.thresh) == 1:
-            if self.thresh_type == 'up':
-                self.df = self.df.loc[self.df[self.col_name] > self.thresh[0]]
-            elif self.thresh_type == 'down':
-                self.df = self.df.loc[self.df[self.col_name] < self.thresh[0]]
+        elif len(thresh) == 1:
+            if thresh_type == 'up':
+                self.df = self.df.loc[self.df[self.col_name] > thresh[0]]
+                return self.df
+            elif thresh_type == 'down':
+                self.df = self.df.loc[self.df[self.col_name] < thresh[0]]
+                return self.df
             else:
                 raise ValueError('Threshold type takes only "up" or "down" value.')
-        elif len(self.thresh) == 2:
-            if self.thresh[0] < self.thresh[1]:
-                self.df = self.df.loc[(self.df[self.col_name] > self.thresh[0]) &
-                                      (self.df[self.col_name] > self.thresh[1])]
+        elif len(thresh) == 2: #Is this functionality necessary? We can bring all operations to multiple usage of single filters. TBD
+            if thresh[0] < thresh[1]:
+                self.df = self.df.loc[(self.df[self.col_name] > thresh[0]) &
+                                      (self.df[self.col_name] < thresh[1])]
+                return self.df
             else:
                 raise ValueError('First threshold value should be lower than second.')
         else:
             raise ValueError('Provided too many filter values. Provide a list with 1 or 2 filter values')
 
 
-def prep_data(df: pd.DataFrame, col_list : List[str]) -> [np.array, pd.DataFrame]:
+def prep_data(df: pd.DataFrame, col_list : List[str]) -> [np.array, pd.DataFrame]: #TODO fix warnings
     df = df[col_list]
 
     le = preprocessing.LabelEncoder()
     scaler = StandardScaler()
 
-    for col in ['flags', 'group', 'partition']:
-        if col in col_list:
-            df[col] = le.fit_transform(df[col])
+    for col in df.columns:
+        try:
+            df[col] = df[col].astype(int)
+        except ValueError:
+            if type(col[0]) is str:
+                df[col] = le.fit_transform(df[col])
+            else:
+                print(f'Wrong column type.')
+
 
     df_pca = df.to_numpy().astype(np.int64)
     df_pca = scaler.fit_transform(df_pca)
