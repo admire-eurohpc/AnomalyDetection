@@ -45,9 +45,8 @@ class NumFiltering(Filtering):
             raise ValueError('Provided too many filter values. Provide a list with 1 or 2 filter values')
 
 
-def prep_data(filename : str, col_list : List[str]) -> [np.array, pd.DataFrame]:
-    df_raw = pd.read_csv(filename)
-    df = df_raw[col_list]
+def prep_data(df: pd.DataFrame, col_list : List[str]) -> [np.array, pd.DataFrame]:
+    df = df[col_list]
 
     le = preprocessing.LabelEncoder()
     scaler = StandardScaler()
@@ -58,7 +57,7 @@ def prep_data(filename : str, col_list : List[str]) -> [np.array, pd.DataFrame]:
 
     df_pca = df.to_numpy().astype(np.int64)
     df_pca = scaler.fit_transform(df_pca)
-    return df_pca, df_raw
+    return df_pca
 
 def extract_nodes_from_node(node_string: str) -> list:
     return_nodes = list()
