@@ -1,5 +1,5 @@
 from sklearn import preprocessing
-from sklearn.preprocessing import StandardScaler, LabelEncoder, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 import numpy as np
 import pandas as pd
 from typing import List
@@ -64,6 +64,7 @@ class DataPreparation:
                 drop_cols.append(column)
 
         df = df.drop(columns=drop_cols)
+        print(np.shape(df['flags']))
         return df
 
     @staticmethod
@@ -84,14 +85,13 @@ class DataPreparation:
 
     @staticmethod
     def onehot_encoding(df: pd.DataFrame): #TODO fix onehot_encoding
-        enc = OneHotEncoder()
 
         for col in df.columns:
             try:
                 df[col].astype(int)
             except ValueError:
                 if type(df[col].iloc[0]) is str:
-                    df[col] = enc.fit_transform(df[col])
+                    df[col] = pd.get_dummies(df[col])
                 else:
                     print(f'Wrong column type.')
 
