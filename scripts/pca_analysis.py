@@ -3,7 +3,7 @@ import os
 import pandas as pd
 
 from admire.models.data_exploration import _pca
-from admire.preprocessing.data_preparation import DataPreparation #TODO change function_name to be more informative, merge with the rest of preprocessing code from Ignacy
+from admire.preprocessing.data_preparation import DataPreparation #TODO Merge code with Ignacy's work
 from admire.visualisation.visualisation import visualisation #TODO change names to be more informative and function to be more general
 
 sys.path.append('../../')
@@ -19,7 +19,7 @@ def pca_analysis():
                             'steps-time-elapsed', 'steps-time-system-seconds', 'steps-time-user-seconds',
                             'steps-tres-requested-max-cpu', 'steps-tres-requested-max-mem',
                             'steps-tres-requested-max-fs', 'steps-tres-consumed-max-energy',
-                            'steps-tres-consumed-max-fs']).prepare(encoding='label_encoding')
+                            'steps-tres-consumed-max-fs']).prepare(encoding='onehot_encoding')
     var, pca = _pca(data)
     print("PCA explains: ", var, 'variance.', type(pca))
 

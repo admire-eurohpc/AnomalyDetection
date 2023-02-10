@@ -49,8 +49,21 @@ class DataPreparation:
         self.col_list = col_list
 
     @staticmethod
-    def choose_columns(df: pd.DataFrame, col_list: List[str]):
+    def choose_columns(df: pd.DataFrame, col_list: List[str]) -> pd.DataFrame:
         df = df[col_list]
+        return df
+
+    @staticmethod
+    def clean_dataset(df: pd.DataFrame) -> pd.DataFrame:
+        drop_cols = []
+        df['flags'] = df['flags'].apply(lambda x: x[22:41])
+        for column in df.columns:
+            if column.startswith('time') or column.startswith('wckey'):  # time is redundant, more information is held in steps-time, wckey holds no info
+                drop_cols.append(column)
+            if len(df[column].unique()) < 2:  # dropping cols with only one value ([], {}, 0, nan)
+                drop_cols.append(column)
+
+        df = df.drop(columns=drop_cols)
         return df
 
     @staticmethod
@@ -93,6 +106,7 @@ class DataPreparation:
 
     def prepare(self, encoding):
         df = self.choose_columns(self.df, self.col_list)
+        df = self.clean_dataset(df)
         if encoding == 'label_encoding':
             arr = self.label_encoding(df)
         elif encoding == 'onehot_encoding':
