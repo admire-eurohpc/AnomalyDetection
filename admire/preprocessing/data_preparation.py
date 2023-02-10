@@ -6,8 +6,6 @@ from typing import List
 import abc
 pd.options.mode.chained_assignment = None
 
- #TODO Napisac funkcje odfiltrowujaca wysokie pomiary steps-tres-consumed-max-energy
- #TODO Odfiltrowac kilkusekundowe joby
 
 class Filtering:
     def __init__(self, df: pd.DataFrame, col_name : str):
@@ -70,33 +68,38 @@ class DataPreparation:
     @staticmethod
     def label_encoding(df: pd.DataFrame):
         le = LabelEncoder()
+        if type(df) == pd.DataFrame:
+            for col in df.columns:
+                try:
+                    df[col].astype(int)
+                except ValueError:
+                    if type(df[col].iloc[0]) is str:
+                        df[col] = le.fit_transform(df[col])
+                    else:
+                        print(f'Wrong column type.')
+            arr = df.to_numpy().astype(np.int64)
+        else:
+            arr = le.fit_transform(df)
 
-        for col in df.columns:
-            try:
-                df[col].astype(int)
-            except ValueError:
-                if type(df[col].iloc[0]) is str:
-                    df[col] = le.fit_transform(df[col])
-                else:
-                    print(f'Wrong column type.')
-
-        df = df.to_numpy().astype(np.int64)
-        return df
+        return arr
 
     @staticmethod
-    def onehot_encoding(df: pd.DataFrame): #TODO fix onehot_encoding
+    def onehot_encoding(df: pd.DataFrame):
+        if type(df) == pd.DataFrame:
+            for col in df.columns:
+                try:
+                    df[col].astype(int)
+                except ValueError:
+                    if type(df[col].iloc[0]) is str:
+                        df[col] = pd.get_dummies(df[col])
+                    else:
+                        print(f'Wrong column type.')
 
-        for col in df.columns:
-            try:
-                df[col].astype(int)
-            except ValueError:
-                if type(df[col].iloc[0]) is str:
-                    df[col] = pd.get_dummies(df[col])
-                else:
-                    print(f'Wrong column type.')
+            arr = df.to_numpy().astype(np.int64)
+        else:
+            arr = pd.get_dummies(df).to_numpy()
 
-        df = df.to_numpy().astype(np.int64)
-        return df
+        return arr
 
     @staticmethod
     def standard_scaling(arr: np.array):
@@ -119,6 +122,20 @@ class DataPreparation:
 class MLDataPreparation(DataPreparation): #TODO finish MLDataPreparation
     def __init__(self, df: pd.DataFrame, col_list: List[str]):
         super(MLDataPreparation, self).__init__(df, col_list)
+
+    def prepare(self, encoding):
+        df = self.choose_columns(self.df, self.col_list)
+        x = df.iloc[:, 0:-1].to_numpy().astype(np.float32)
+        x = self.standard_scaling(x)
+        y = df.iloc[:, -1]
+        if encoding == 'label_encoding':
+            y = self.label_encoding(y)
+        elif encoding == 'onehot_encoding':
+            y = self.onehot_encoding(y)
+        else:
+            raise ValueError('Encoding accepts only "label_encoding" or "onehot_encoding" values')
+
+        return x, y
 
 
 def prep_data(df: pd.DataFrame, col_list : List[str]) -> [np.array, pd.DataFrame]: #TODO fix warnings
