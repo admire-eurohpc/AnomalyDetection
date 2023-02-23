@@ -1,9 +1,14 @@
 import pandas as pd
 import logging
 
+# Set logging level
+logging.basicConfig(level=logging.DEBUG)
+
 data_dir = 'data/'
 # load csv
 df_raw = pd.read_csv(f'{data_dir}/jobs_flattened_cleaned_1.csv')
+logging.debug(f'Columns: {df_raw.columns.to_list()}')
+columns_before = set(df_raw.columns.to_list())
 
 # Drop where nodes is NaN
 df_raw = df_raw.dropna(subset=['nodes', 'steps-tres-requested-min-cpu-node']).reset_index(drop=True)
@@ -17,11 +22,14 @@ to_drop = ['reservation', 'qos', 'working_directory', 'user', 'steps-nodes-range
 to_drop += [col for col in df_raw.columns if 'steps-tres' in col and '-node' in col]
 # all starting with time- or wckey
 to_drop += [col for col in df_raw.columns if col.startswith('time-') or col.startswith('wckey-')]
-logging.debug(f'Drop columns: {to_drop}')
 df_raw = df_raw.drop(columns=to_drop)
 
 # Combine flags into one column
 df_raw['flags'] = df_raw['flags'].apply(lambda x: '-'.join(x.split(',')))
+
+columns_after = set(df_raw.columns.to_list())
+# log dropped columns
+logging.debug(f'Columns that were dropped: {columns_before - columns_after}')
 
 # Drop columns which have only ONE unique value
 df_raw = df_raw.loc[:, df_raw.nunique() != 1]
