@@ -28,10 +28,8 @@ def main():
 
     x, y = MLDataPreparation(df_raw,
                            ['steps-tres-consumed-total-energy',
-                            'steps-time-system-seconds', 'steps-time-user-seconds',
-                            'steps-tres-requested-max-cpu', 'steps-tres-requested-max-mem',
                             'steps-tres-consumed-max-energy',
-                            'steps-tres-consumed-max-fs', 'nodes']).prepare(encoding=ENCODING)
+                            'nodes']).prepare(encoding=ENCODING)
 
     _logistic_regression(x, y, x, y, encoding=ENCODING)
 if __name__ == "__main__":

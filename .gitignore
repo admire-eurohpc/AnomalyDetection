@@ -1,6 +1,7 @@
 /.idea
 *.py[cod]
 *__pycache__*
+*.parquet
 
 .vscode/
 
