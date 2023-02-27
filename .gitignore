@@ -2,8 +2,8 @@
 *.py[cod]
 *__pycache__*
 *.parquet
-
+*.zip
 .vscode/
-
+*.ipynb_checkpoints
 *Untitled*
 *_local*
