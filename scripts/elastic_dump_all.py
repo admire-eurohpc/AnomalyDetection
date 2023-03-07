@@ -10,8 +10,10 @@ ROOT_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
 
 es = Elasticsearch([{"host": "10.200.132.195", "port": 9200, "scheme": "http"}]) #need VPN connection
 
-es_index = "eagle_temps-2023-02" #index name
+es_index = "eagle_temps-2023-01" #index name
 
+#consider changing this parameter to chassis if you experiance OOM in this script. Chassis divide data into 4 similar chunks instead of taking all at once. 
+#If you decide to go with chassis, change all "kiosk" to "chassis". Chassis has values from 1 to 4.
 kiosk = 6 #taking kiosk 6 temps, 96% od data comes from kiosk 6, the rest is probably from some smaller machines
 
 body2 = {
@@ -23,7 +25,7 @@ body2 = {
 res = es.count(index=es_index, body= body2)
 size = res['count']
 print(size)
-size = 19740000 #set value by hand, in other case for loop doesn't work
+#size = 19740000 #set value by hand, in other case for loop doesn't work
 print(size)
 
 

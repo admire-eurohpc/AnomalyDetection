@@ -54,7 +54,9 @@ class DataPreparation:
     @staticmethod
     def clean_dataset(df: pd.DataFrame) -> pd.DataFrame:
         drop_cols = []
-        df['flags'] = df['flags'].apply(lambda x: x[22:41])
+        if 'flags' in df.columns:
+            print('fixing flags column')
+            df['flags'] = df['flags'].apply(lambda x: x[22:41])
         for column in df.columns:
             if column.startswith('time') or column.startswith('wckey'):  # time is redundant, more information is held in steps-time, wckey holds no info
                 drop_cols.append(column)
@@ -62,7 +64,6 @@ class DataPreparation:
                 drop_cols.append(column)
 
         df = df.drop(columns=drop_cols)
-        print(np.shape(df['flags']))
         return df
 
     @staticmethod
@@ -132,6 +133,8 @@ class MLDataPreparation(DataPreparation): #TODO finish MLDataPreparation
             y = self.label_encoding(y)
         elif encoding == 'onehot_encoding':
             y = self.onehot_encoding(y)
+        elif encoding == 'None':
+            pass
         else:
             raise ValueError('Encoding accepts only "label_encoding" or "onehot_encoding" values')
 
