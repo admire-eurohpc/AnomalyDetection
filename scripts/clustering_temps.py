@@ -1,48 +1,69 @@
 import sys
 import os
-import pandas as pd
 import datetime
-import numpy as np
 
-from tslearn.clustering import TimeSeriesKMeans
-from collections import Counter
-from plotly.subplots import make_subplots
+import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-from admire.models.data_exploration import _pca, _kmeans
-from admire.preprocessing.data_preparation import NumFiltering, DataPreparation
-from admire.visualisation.visualisation import visualisation #TODO change names to be more informative and function to be more general
+
+from tslearn.clustering import TimeSeriesKMeans
+from tslearn.utils import to_time_series_dataset
+from plotly.subplots import make_subplots
+from admire.visualisation.visualisation import sublots_clustering #TODO change names to be more informative and function to be more general
 
 sys.path.append('../../')
 
 ROOT_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
 ENCODING = 'label_encoding'
+N_CLUSTERS = 10
 print(ROOT_DIR)
 
+def prep_data(df: pd.DataFrame, date_min: datetime.date, date_max: datetime.date, only_whole: bool) -> [list, np.array]:
+    '''
+    df : DataFrame to operate on
+    date_min : First day of measurements
+    date_max : Last day of measurements
+    only_whole : Take only full days of measurements 
+    (Some nodes become idle due to low cluster demand, after becoming idle the measurements stop.)
+    '''
+    df['date'] = pd.to_datetime(df['date'])
+    dates = pd.date_range(date_min, date_max)
+    x=[]
+    for date in dates:
+        df_temp = df.loc[df['date'].dt.date == date]
+        df_res = df_temp
+        for host in df_temp['hostname'].unique():
+            df_temp = df_res[df_res['hostname'] == host]
+            if only_whole:
+                if len(df_temp['power']) == 144:
+                    res = df_temp['power'].reset_index(drop=True)
+                    res.name=f'{host}_{date}' #in case we want to compare distances/plot corr matrix between hosts
+                    x.append(res)
+                else: pass
+            else: #TODO Czy jest sens w ogóle podejmować się clusteringu pomiarów o zmiennej długości? 
+                res = df_temp['power'].reset_index(drop=True)
+                res.name=f'{host}_{date}' #in case we want to compare distances/plot corr matrix between hosts
+                x.append(res)
+    if only_whole:
+        x_ = np.reshape(x, (np.shape(x)[0], np.shape(x)[1], 1))
+    else:
+        print(np.shape(x))
+        x_ = to_time_series_dataset(x)
+
+
+    return x, x_
+
 def clustering():
-    df_trimmed = pd.read_parquet(os.path.join(ROOT_DIR, 'data', '1-22.02.2023_tempdata_trimmed.parquet'))
-    df_trimmed['date'] = pd.to_datetime(df_trimmed['date'])
-    x = []
-    print("data loaded and prepared")
-    df_trimmed = df_trimmed[df_trimmed['date'].dt.date == datetime.date(2023, 2, 5)]
-    for elem in df_trimmed['hostname'].unique():
-        df_temp = df_trimmed[df_trimmed['hostname'] == elem]
-        if len(df_temp['power']) == 144:
-            res = df_temp['power'].reset_index(drop=True)
-            res.name=elem
-            x.append(res)
-    model = TimeSeriesKMeans(n_clusters=8, metric="dtw", max_iter=10)
-    x_ = np.reshape(x, (np.shape(x)[0], np.shape(x)[1], 1))
+    df = pd.read_parquet(os.path.join(ROOT_DIR, 'data', '1-22.02.2023_tempdata_trimmed.parquet'))
+
+    x, x_ = prep_data(df, datetime.date(2023, 2, 6), datetime.date(2023, 2, 6), only_whole=False)
+    
+    model = TimeSeriesKMeans(n_clusters=N_CLUSTERS, metric="dtw", max_iter=10)
     model.fit(x_)
 
 
-
-    fig = make_subplots(rows=4, cols=2)
-    for i in range(0,8):
-        for j, label in enumerate(model.labels_):
-            if i == label:
-                fig.append_trace(go.Scatter(y = x[j], mode="lines"), row=i//2+1, col=i%2+1)
-    fig.show()
+    sublots_clustering(N_CLUSTERS, model.labels_, x)
 
 if __name__ == "__main__":
     clustering()

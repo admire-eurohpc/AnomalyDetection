@@ -27,3 +27,4 @@ def _logistic_regression(x_train: np.array, y_train: np.array, x_test: np.array,
         raise ValueError('Onehot encoding not supported')
         # clf = LogisticRegression(random_state=0, solver='liblinear', multi_class='ovr').fit(x_train, y_train)
         # print(clf.score(x_test, y_test))
+
