@@ -19,9 +19,10 @@ def sublots_clustering(n_clusters: int, model_labels: Any, data: np.array):
     model_labels : labels for different clusters in data
     x : data
     '''
-    fig = make_subplots(rows=n_clusters//2, cols=2)
-    for i in range(0,n_clusters):
+
+    fig = make_subplots(rows=n_clusters//2+1, cols=2)
+    for i, elem in enumerate(set(model_labels)):
         for j, label in enumerate(model_labels):
-            if i == label:
+            if elem == label:
                 fig.append_trace(go.Scatter(y = data[j], mode="lines"), row=i//2+1, col=i%2+1)
     fig.show()

@@ -4,14 +4,10 @@ import datetime
 
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
 
-from tslearn.clustering import TimeSeriesKMeans
 from tslearn.utils import to_time_series_dataset
-from plotly.subplots import make_subplots
 from admire.visualisation.visualisation import sublots_clustering #TODO change names to be more informative and function to be more general
-
+from admire.models.data_exploration import time_series_clustering
 sys.path.append('../../')
 
 ROOT_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
@@ -55,15 +51,16 @@ def prep_data(df: pd.DataFrame, date_min: datetime.date, date_max: datetime.date
     return x, x_
 
 def clustering():
+    '''
+    For data longer than 1000 series it takes a lot of time to compute
+    '''
     df = pd.read_parquet(os.path.join(ROOT_DIR, 'data', '1-22.02.2023_tempdata_trimmed.parquet'))
 
-    x, x_ = prep_data(df, datetime.date(2023, 2, 6), datetime.date(2023, 2, 6), only_whole=False)
+    x, x_ = prep_data(df, datetime.date(2023, 2, 6), datetime.date(2023, 2, 8), only_whole=True)
     
-    model = TimeSeriesKMeans(n_clusters=N_CLUSTERS, metric="dtw", max_iter=10)
-    model.fit(x_)
+    model, clusters = time_series_clustering(x_, "dbscan")
 
-
-    sublots_clustering(N_CLUSTERS, model.labels_, x)
+    sublots_clustering(clusters, model.labels_, x)
 
 if __name__ == "__main__":
     clustering()
