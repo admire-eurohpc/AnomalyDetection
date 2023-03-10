@@ -17,7 +17,7 @@ df_raw = df_raw.dropna(subset=['nodes', 'steps-tres-requested-min-cpu-node']).re
 df_raw['constraints'] = df_raw['constraints'].fillna('no-constraints')
 
 # Drop designated columsn
-to_drop = ['reservation', 'qos', 'working_directory', 'user', 'steps-nodes-range']
+to_drop = ['reservation', 'qos', 'working_directory', 'steps-nodes-range']
 # all with steps-tres ... -node
 to_drop += [col for col in df_raw.columns if 'steps-tres' in col and '-node' in col]
 # all starting with time- or wckey
