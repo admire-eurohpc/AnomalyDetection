@@ -10,8 +10,9 @@ from sklearn.linear_model import LogisticRegression
 from tslearn.clustering import TimeSeriesKMeans
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import Normalizer
+from sklearn.neighbors import LocalOutlierFactor
 
-
+from collections import Counter
 
 
 
@@ -50,3 +51,16 @@ def time_series_clustering(data: np.array, clustering: str, n_clusters: int = 8)
         print(n_clusters)
     model.fit(data)
     return model, n_clusters
+
+def local_outlier_factor(data: np.array) -> Any:
+    data = cdist_dtw(data, n_jobs=-1, verbose=0)
+    model = LocalOutlierFactor(n_neighbors=40, contamination=0.05, metric='precomputed')
+    labels = model.fit_predict(data)
+    y = []
+    for i, elem in enumerate(labels):
+        if elem == - 1:
+            y.append(model.negative_outlier_factor_[i])
+
+
+    print(np.average(y))
+    return labels, len(set(labels))
