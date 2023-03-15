@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-
+import plotly.figure_factory as ff
 from typing import Any
 
 from tslearn.metrics.dtw_variants import cdist_dtw
@@ -11,6 +11,7 @@ from tslearn.clustering import TimeSeriesKMeans
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import Normalizer
 from sklearn.neighbors import LocalOutlierFactor
+from scipy.cluster.hierarchy import single, complete, average, ward, fcluster
 
 from collections import Counter
 
@@ -48,9 +49,27 @@ def time_series_clustering(data: np.array, clustering: str, n_clusters: int = 8)
         model = DBSCAN(eps=0.0017, min_samples=8, metric="precomputed").fit(data)
         labels = model.labels_
         n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-        print(n_clusters)
+        print(n_clusters)        
     model.fit(data)
     return model, n_clusters
+
+def hierarchical_clustering(data: np.array, method: str='complete'):
+    distance_matrix = cdist_dtw(data, n_jobs=-1, verbose=1)
+    if method == 'complete':
+        Z = complete(distance_matrix)
+    if method == 'single':
+        Z = single(distance_matrix)
+    if method == 'average':
+        Z = average(distance_matrix)
+    if method == 'ward':
+        Z = ward(distance_matrix)
+    
+    fig = ff.create_dendrogram(Z)
+    fig.show()
+    n_clusters = 7
+    cluster_labels = fcluster(Z, n_clusters, criterion='maxclust')
+
+    return Z, cluster_labels, n_clusters
 
 def local_outlier_factor(data: np.array) -> Any:
     data = cdist_dtw(data, n_jobs=-1, verbose=0)
