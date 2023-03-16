@@ -10,8 +10,10 @@ from typing import Optional
 from itertools import chain
 from tslearn.utils import to_time_series_dataset
 from admire.visualisation.visualisation import subplots_clustering #TODO change names to be more informative and function to be more general
-from admire.models.data_exploration import time_series_clustering, local_outlier_factor, hierarchical_clustering
+from admire.models.data_exploration import dbscan_clustering, kmeans_clustering, local_outlier_factor, hierarchical_clustering
 sys.path.append('../../')
+
+#TODO implement calculation of n day distance matraix based on dtw_distance, saving and loading of matrix
 
 ROOT_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
 ENCODING = 'label_encoding'
@@ -75,8 +77,11 @@ def clustering(method: str):
     df = pd.read_parquet(os.path.join(ROOT_DIR, 'data', '1-22.02.2023_tempdata_trimmed.parquet'))
     df_series, x_ = prep_data(df, datetime.date(2023, 2, 13), datetime.date(2023, 2, 13), True)
 
-    if method=="clustering":
-        model, clusters = time_series_clustering(x_, "dbscan")
+    if method=="dbscan":
+        model, clusters = dbscan_clustering(x_)
+        subplots_clustering(clusters, model.labels_, df_series['power_series'])
+    elif method=='kmeans':
+        model, clusters = kmeans_clustering(x_, n_clusters=8)
         subplots_clustering(clusters, model.labels_, df_series['power_series'])
     elif method=="lof":
         model, lof_labels, clusters = local_outlier_factor(x_)
@@ -95,4 +100,4 @@ def clustering(method: str):
 
 
 if __name__ == "__main__":
-    clustering(method = 'hierarchical')
+    clustering(method = 'dbscan')

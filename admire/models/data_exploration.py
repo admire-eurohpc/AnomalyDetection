@@ -39,21 +39,30 @@ def _logistic_regression(x_train: np.array, y_train: np.array, x_test: np.array,
         # clf = LogisticRegression(random_state=0, solver='liblinear', multi_class='ovr').fit(x_train, y_train)
         # print(clf.score(x_test, y_test))
 
-def time_series_clustering(data: np.array, clustering: str, n_clusters: int = 8) -> Any:
-    if clustering == 'kmeans':
-        model = TimeSeriesKMeans(n_clusters=n_clusters, metric="dtw", max_iter=10)
-    elif clustering == "dbscan":
-        norm = Normalizer()
-        data = cdist_dtw(data, n_jobs=-1, verbose=1)
-        data = norm.fit_transform(data)
-        model = DBSCAN(eps=0.0017, min_samples=8, metric="precomputed").fit(data)
-        labels = model.labels_
-        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-        print(n_clusters)        
+def dbscan_clustering(data: np.array) -> Any:
+    """
+    You need to carefully change eps. Best results between 0.0015 and 0.0020.
+    """
+    norm = Normalizer()
+    data = cdist_dtw(data, n_jobs=-1, verbose=1)
+    data = norm.fit_transform(data)
+    model = DBSCAN(eps=0.0017, min_samples=8, metric="precomputed").fit(data)
+    labels = model.labels_
+    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+    print(n_clusters)        
     model.fit(data)
     return model, n_clusters
 
+def kmeans_clustering(data: np.array, n_clusters: int = 8) -> Any:
+    model = TimeSeriesKMeans(n_clusters=n_clusters, metric="dtw", max_iter=10)      
+    model.fit(data)
+    return model, n_clusters
+
+
 def hierarchical_clustering(data: np.array, method: str='complete'):
+    """
+    Instead fo defining clusters you can designate threshold point read from dendogram
+    """
     distance_matrix = cdist_dtw(data, n_jobs=-1, verbose=1)
     if method == 'complete':
         Z = complete(distance_matrix)
