@@ -13,7 +13,7 @@ def visualisation(arr: np.array, labels: Any):
     fig.update_traces(marker=dict(size=2))
     fig.show()
 
-def sublots_clustering(n_clusters: int, model_labels: Any, data: np.array):
+def subplots_clustering(n_clusters: int, model_labels: Any, data: np.array):
     '''
     n_clusters : how many cluster figures will plotly generate
     model_labels : labels for different clusters in data

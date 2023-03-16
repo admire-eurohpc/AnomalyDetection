@@ -75,11 +75,4 @@ def local_outlier_factor(data: np.array) -> Any:
     data = cdist_dtw(data, n_jobs=-1, verbose=0)
     model = LocalOutlierFactor(n_neighbors=40, contamination=0.05, metric='precomputed')
     labels = model.fit_predict(data)
-    y = []
-    for i, elem in enumerate(labels):
-        if elem == - 1:
-            y.append(model.negative_outlier_factor_[i])
-
-
-    print(np.average(y))
-    return labels, len(set(labels))
+    return model, labels, len(set(labels))
