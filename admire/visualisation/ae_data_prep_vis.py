@@ -5,19 +5,15 @@ import plotly.io as pio
 #pio.renderers.default = "browser"
 # render in popout window matplotlib style
 pio.renderers.default = "browser"
-
-hostname = "e1110"
-
 column = 'power'
 
-df = pd.read_pickle(f"data/processed/{hostname}.pickle")
+for hostname in ['e1105', 'e1537', 'e1178']:
+    
+    df = pd.read_parquet(f"data/processed/{hostname}.parquet")
+    df['date'] = pd.to_datetime(df['date'])
 
 
-print(df.info())
+    print(df.info())
 
-fig = px.scatter(df, x="date", y=column, title=f"{hostname} {column}")
-fig.show()
-
-# columns = ['cpu1', 'cpu2']
-# fig = px.scatter(df, x="date", y=columns, title=f"{hostname} {columns}")
-# fig.show()
+    fig = px.scatter(df, x="date", y=column, title=f"{hostname} {column}")
+    fig.show()
