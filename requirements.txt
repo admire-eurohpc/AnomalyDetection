@@ -1,0 +1,12 @@
+matplotlib
+plotly
+kaleido==0.1.0post1
+lightning
+torch
+torchsummary
+tqdm
+pandas
+numpy
+scikit-learn
+tslearn
+elasticsearch
