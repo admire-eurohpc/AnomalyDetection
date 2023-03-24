@@ -5,6 +5,7 @@ import numpy.typing as npt
 from torch.utils.data import Dataset
 import logging
 import tqdm
+import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
@@ -36,28 +37,28 @@ class TimeSeriesDataset(Dataset):
 
         # Concatenate data into one time series array (numpy array)
         # TODO: This is not efficient, but it works for now
-        # Desired shape will be (n_nodes x n_time_steps x n_features)
-        # e.g. (100 nodes x 1000 time ticks x 3 features)
+        # Desired shape will be (n_features x n_nodes x n_time_steps )
+        # e.g. (3 features x 100 nodes x 1000 time ticks )
         for filename in tqdm.tqdm(filenames, desc="Loading ts data"):
             _data = pd.read_parquet(
                         os.path.join(data_dir, filename), 
                         columns=['power', 'cpu1', 'cpu2']
                         ) \
-                    .to_numpy() \
-                    .reshape(1, -1, 3)
+                    .to_numpy().T.reshape(3, 1, -1) 
+                    
+            logger.debug(f'Loaded data shape: {_data.shape}')
                     
             if self.time_series is None:
                 self.time_series = _data
             else:
-                self.time_series = np.concatenate((self.time_series, _data), axis=0)
+                self.time_series = np.concatenate((self.time_series, _data), axis=1)
+        
+        logger.debug(f"Time series shape after concatenation: {self.time_series.shape}")
+        
                 
         # It is important to convert to float32, otherwise pytorch will complain
         self.time_series = self.time_series.astype(np.float32)
         
-        # Reshape time series so the first dimension is the time dimension
-        # (n_time_steps x n_nodes x n_features)
-        self.time_series = self.time_series.reshape(self.time_series.shape[1], self.time_series.shape[0], self.time_series.shape[2])
-            
         logger.debug(f"Time series shape: {self.time_series.shape}")
         logger.debug(f'Time series sample: {self.time_series[0:3, 0:3, :]}')
 
@@ -66,15 +67,22 @@ class TimeSeriesDataset(Dataset):
         '''
         Returns the number of windows in the time series given the window size and slide length
         '''
-        return len(self.time_series) // self.slide_length - self.window_size // self.slide_length # TODO: Check this thoroughly
+        return self.time_series.shape[2] // self.slide_length - self.window_size // self.slide_length # TODO: Check this thoroughly
 
     def __getitem__(self, idx): 
         start = idx * self.slide_length # Each window starts at a multiple of the slide length
-        ts = self.time_series[start:start+self.window_size, :, :] # Get the window
-        return ts
+        ts = self.time_series[:, :, start:start+self.window_size] # Get the window
+        return ts.flatten()
     
     def get_time_series(self):
         return self.time_series
+    
+    def get_input_layer_size_flattened(self):
+        return self.time_series.shape[1] * self.time_series.shape[2] * self.window_size
+    
+    def get_input_layer_shape(self):
+        '''(n_features x n_nodes x n_time_steps)'''
+        return self.time_series.shape[0], self.time_series.shape[1], self.window_size
     
 
 if __name__ == '__main__':
