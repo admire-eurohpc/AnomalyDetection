@@ -1,3 +1,4 @@
+import json
 from typing import List
 import pandas as pd
 import numpy as np
@@ -16,9 +17,9 @@ def read_data(filenames: List[str], data_dir: str = 'data/', important_cols: Lis
         logger.debug(f'Reading {filename}')
         path = os.path.join(data_dir, filename)
         if important_cols:
-            df = pd.concat([df, pd.read_parquet(path, columns=important_cols)])
+            df = pd.concat([df, pd.read_parquet(path, columns=important_cols)], ignore_index=True)
         else:
-            df = pd.concat([df, pd.read_parquet(path)])
+            df = pd.concat([df, pd.read_parquet(path)], ignore_index=True)
     
     logger.debug(f'DF info {df.info()}')
 
@@ -28,7 +29,7 @@ def read_data(filenames: List[str], data_dir: str = 'data/', important_cols: Lis
         df['date'] = pd.to_datetime(df['date'])
         df['date'] = df['date'].dt.round('min')
 
-    return df
+    return df.reset_index(drop=True)
 
 def save_data(df: pd.DataFrame, filename: str, data_dir: str = 'data/processed/', keep_columns: List[str] = None) -> None:
     """
@@ -41,6 +42,10 @@ def save_data(df: pd.DataFrame, filename: str, data_dir: str = 'data/processed/'
     """
     if 'parquet' not in filename:
         filename += '.parquet'
+        
+    if not os.path.exists(data_dir):
+        logger.info(f'Creating directory {data_dir}')
+        os.makedirs(data_dir)
 
     path = os.path.join(data_dir, filename)
     logger.info(f'Saving data of shape {df.shape} to {path}')
@@ -50,7 +55,21 @@ def save_data(df: pd.DataFrame, filename: str, data_dir: str = 'data/processed/'
         df[keep_columns].reset_index(drop=True).to_parquet(path)
     else:
         df.reset_index(drop=True).to_parquet(path)
-
+        
+    # Save metadata 
+    # TODO: Come up with a better way to save metadata
+    # as this is not very efficent and will take a lot of space
+    # maybe one metadata file per whole dataset?
+    # metadata = {
+    #     'filename': filename,
+    #     'shape': df.shape,
+    #     'columns': df.columns.tolist(),
+    #     'keep_columns': keep_columns,
+    #     'date_index': df['date'].to_list()
+    # }
+    # metadata_path = os.path.join(data_dir, filename.replace('.parquet', '.json'))
+    # with open(metadata_path, 'w') as f:
+    #     json.dump(metadata, f)
 
 def remove_data_between_dates(df: pd.DataFrame, start: str, end: str) -> pd.DataFrame:
     """
@@ -102,31 +121,54 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
 
 if __name__ == '__main__':
     data_dir = "data/"
-    save_data_dir = "data/processed/"
     important_cols = ['date', 'hostname', 'power', 'cpu1', 'cpu2']
-    files_to_read = ['01.2023_tempdata.parquet', 'temp_data1.parquet', 'temp_data2.parquet', 'temp_data3.parquet', 'temp_data4.parquet'][0:1]
-    df = read_data(files_to_read, data_dir, important_cols)
-
-    logger.debug(f'Before removing data {df.shape}')
-
-    df = remove_data_between_dates(df, '2023-01-01 00:00:00', '2023-01-05 12:50:00')
-    df = remove_data_between_dates(df, '2023-02-01', '2023-02-02')
-    df = remove_data_between_dates(df, '2023-02-04', '2023-02-10')
-
-    df = df.reset_index(drop=True)
-
-    logger.debug(f'After removing data {df.shape}')
-
+    files_to_read = ['01.2023_tempdata.parquet', 'temp_data1.parquet', 'temp_data2.parquet', 'temp_data3.parquet', 'temp_data4.parquet'] # Only February data
+    
+    raw_df = read_data(files_to_read, data_dir, important_cols)
+    logger.debug(f'Before removing data {raw_df.shape}')
+    important_cols.remove('hostname')
+    
     hosts_blacklist = ['e2015'] # 2015 is known to be faulty
 
-    hosts = [x for x in df['hostname'].unique() if x not in hosts_blacklist][0:10]
+    TAKE_NODES = 50
+    hosts_to_take = raw_df['hostname'].unique().tolist()
+    for host in hosts_blacklist:
+        hosts_to_take.remove(host)
+    
+    hosts_to_take.sort()
+    
+    hosts = hosts_to_take[:TAKE_NODES]
+    logging.info(f'Hosts to process {hosts}')
+    
+    for type in ['train', 'test']:
+        save_data_dir = f"data/processed/{type}"
+        df = raw_df.copy()
+        
+        if type == 'test':
+            df = remove_data_between_dates(df, '2000-01-01 00:00:00', '2023-02-03') # Remove data before 2023-01-03
+            df = remove_data_between_dates(df, '2023-02-13 00:00:00', '2030-05-10') # Remove data after 2023-02-13
+            df = df.reset_index(drop=True)
+            
+            date_range_start = '2023-02-03'
+            date_range_end = '2023-02-13'
+              
+        elif type == 'train':
+            df = remove_data_between_dates(df, '2000-01-01 00:00:00', '2023-01-05 12:50:00')  # Remove data before 2023-01-05 12:50:00
+            df = remove_data_between_dates(df, '2023-02-01', '2023-02-02') 
+            df = remove_data_between_dates(df, '2023-02-04', '2023-02-10') # big anomaly time
+            df = remove_data_between_dates(df, '2023-02-13 00:00:00', '2030-05-10') # Remove data after 2023-02-13
+            
+            date_range_start = '2023-01-05 12:50:00'
+            date_range_end = '2023-01-31 23:59:59'
 
-    df = get_data_for_hosts(df, hosts)
+        logger.debug(f'After removing data {df.shape}')
 
-    logger.info(f'After getting data for hosts {df.shape}')
-    important_cols.remove('hostname')
+        df = get_data_for_hosts(df, hosts)
 
-    for host in tqdm(hosts, desc='Filling missing data'):
-        logger.debug(f'Filling missing data for {host}')
-        _df_host = fill_missing_data(df[df['hostname'] == host].copy(), '2023-01-05', '2023-01-31', host)
-        save_data(_df_host, f'{host}', save_data_dir, keep_columns=important_cols)
+        logger.info(f'After getting data for hosts {df.shape}')
+        logger.info(f'Considered date range {df["date"].min()} - {df["date"].max()}')
+
+        for host in tqdm(hosts, desc='Filling missing data'):
+            logger.debug(f'Filling missing data for {host}')
+            _df_host = fill_missing_data(df[df['hostname'] == host].copy(), date_range_start, date_range_end, host)
+            save_data(_df_host, f'{host}', save_data_dir, keep_columns=important_cols)
