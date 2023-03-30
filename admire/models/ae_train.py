@@ -1,27 +1,37 @@
-from ae_litmodel import LitAutoEncoder
-from ae_dataloader import TimeSeriesDataset
-import lightning.pytorch as pl
-from torch.utils.data import DataLoader
-from torch import optim, nn, utils, Tensor
-import torch
-import lightning as L
-from lightning.pytorch.loggers import TensorBoardLogger
 import logging
 import os 
-from torchsummary import summary
+import pandas as pd
 from datetime import datetime
+import numpy as np
 
+# -- Pytorch imports --
+import torch
+from torch.utils.data import DataLoader
+from torch import optim, nn, utils, Tensor
+from torchsummary import summary
+import lightning as L
+import lightning.pytorch as pl
+from lightning.pytorch.loggers import TensorBoardLogger
+
+# -- Own modules --
 from ae_encoder import Encoder
 from ae_decoder import Decoder
+from ae_litmodel import LitAutoEncoder
+from ae_dataloader import TimeSeriesDataset
+from utils.plotting import plot_embeddings_vs_real, plot_reconstruction_error_over_time
+
 
 logging.basicConfig(level=logging.DEBUG)
+
 
 image_save_path = os.path.join('images', 'training')
 if not os.path.exists(image_save_path):
     os.makedirs(image_save_path)
 
+
 _tmp_name = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
 logger = TensorBoardLogger(save_dir="lightning_logs", name="ae", version=f'{_tmp_name}')
+
 
 # Setting the seed
 L.seed_everything(42)
@@ -31,12 +41,15 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 
-LATENT_DIM = 32
 BATCH_SIZE = 64
-MAX_EPOCHS = 150
+MAX_EPOCHS = 100
 SHUFFLE = True
-ENCODER_LAYERS = [256, 64]
-DECODER_LAYERS = [64, 256]
+
+
+# THIS NUMBERS WILL BE MULTIPLIED BY NUMBER OF NODES 
+ENCODER_LAYERS = np.array([32, 16])
+DECODER_LAYERS = np.array([16, 32])
+LATENT_DIM = 8 
 
 
 def calculate_linear_layer_size_after_conv(input_shape, kernel_size, stride, padding):
@@ -55,7 +68,7 @@ def calculate_linear_layer_size_after_conv(input_shape, kernel_size, stride, pad
 if __name__ == "__main__":
     
     # Setup data generator class and load it into a pytorch dataloader
-    dataset = TimeSeriesDataset(data_dir="data/processed/", normalize=True)
+    dataset = TimeSeriesDataset(data_dir="data/processed/train/", normalize=True)
     train_set, val_set = torch.utils.data.random_split(dataset, [0.8, 0.2])
     
     train_loader = DataLoader(
@@ -69,6 +82,8 @@ if __name__ == "__main__":
         shuffle=SHUFFLE
         )
     
+    test_dataset = TimeSeriesDataset(data_dir="data/processed/test/", normalize=True, external_transform=dataset.get_transform())
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     
     input_size = dataset.get_input_layer_size_flattened()
 
@@ -79,6 +94,9 @@ if __name__ == "__main__":
     
     logging.debug(f"input_shape: {input_shape}")
     logging.debug(f'channels: {channels}, height: {height}, width: {width}')
+
+    ENCODER_LAYERS = ENCODER_LAYERS * height
+    DECODER_LAYERS = DECODER_LAYERS * height # TODO: Do it a bit more smart, for now the height means the number of nodes in data
 
     # BUILD ENCODER
     encoder = nn.Sequential()
@@ -145,63 +163,46 @@ if __name__ == "__main__":
                                 latent_dim=LATENT_DIM
                                 )
 
-    # choose your trained nn.Module
-    encoder = autoencoder.encoder
-    encoder.eval()
-
-    # embed 4 fake images!
-    fast_check_if_it_works = next(iter(val_loader))
-    embeddings = decoder(encoder(fast_check_if_it_works))
-    print("⚡" * 20, "\nPredictions:\n", embeddings, "\n", "⚡" * 20)
-    print("⚡" * 20, "\nOriginal: \n", fast_check_if_it_works, "\n", "⚡" * 20)
     
-    
-    def plot_embeddings_vs_real(_embeddings, _real):
-        '''
-        Plots the embeddings vs the real data.
-        '''
-        import plotly.express as px
-        import plotly.io as pio
-        import plotly.graph_objects as go
-        from plotly.subplots import make_subplots
-        
-        pio.renderers.default = "browser"
-        
-        _embeddings = _embeddings.reshape(-1, channels, height, width)
-        _real = _real.reshape(-1, channels, height, width)
-        
-        time_dim = [i for i in range(_embeddings.shape[3])]
-        
-        indices = [0, 1, 2, 3, 10, 11, 12, 13, 14] # 9 random indices
-        channel = ['power', 'cpu1', 'cpu2']
-        height_node = 0
 
-        for c, channel in enumerate(channel):
-            fig = make_subplots(rows=3, cols=3)
-            for i, idx in enumerate(indices):
-                
-                fig.add_scatter(x=time_dim, y=_embeddings[idx][c][height_node].astype(float), 
-                                mode='lines+markers', name='Reconstructed',  
-                                line = dict(color='royalblue', width=4, dash='dash'), row=i % 3 + 1, col=i // 3 + 1)
-                
-                fig.add_scatter(x=time_dim, y=_real[idx][c][height_node].astype(float), 
-                                mode='lines+markers', name='Real',  
-                                line = dict(color='red', width=4, dash='dot'), row=i % 3 + 1, col=i // 3 + 1)
-                
-            fig.update_traces(mode='lines+markers' ,overwrite=True)
-            fig.update_traces(marker={'size': 9}, overwrite=True)
-            fig.update_layout(
-                title=f"Validation set Reconstructed vs Real **{channel}** for node (idx) {height_node}\nCheckpoint: '{checkpoint}'",
-            )
-            fig.update_layout(
-                autosize=False,
-                width=1400,
-                height=1000,
-                overwrite=True
-                )
-            fig.write_image(os.path.join(image_save_path, f'validation_set_reconstructed_vs_real_{channel}_node_{height_node}.png'))
-            fig.show()
+
+    # ----- TEST ----- #
+    
+    # Now test the model on february data
+    # Run the model on the entire test set and report MAE 
+    encoder = autoencoder.encoder.eval()
+    decoder = autoencoder.decoder.eval()
+
+    test_reconstruction_mean_absolute_error = []
+    for batch in test_dataloader:
+        test_reconstruction_mean_absolute_error.append(
+            torch.sum(torch.abs(batch - decoder(encoder(batch)))).detach().numpy()
+        )
+    
+    dates = pd.read_parquet("data/processed/test/test_e1105.parquet")['date']
+    dates = pd.to_datetime(dates)
+    logging.debug(f'Date range: {dates.min()} - {dates.max()}')
+    
+    dates = [i for i in range(len(test_reconstruction_mean_absolute_error))]
+    
+    logging.debug(f"Plotting reconstruction error over time")
+    plot_reconstruction_error_over_time(
+        reconstruction_errors=test_reconstruction_mean_absolute_error,
+        time_axis=dates
+    )
+
+
+    some_sample = next(iter(test_dataloader))
+    reconstructions = decoder(encoder(some_sample))
+    logging.debug(f"Plotting reconstructions vs real")
             
-    plot_embeddings_vs_real(embeddings.detach().numpy(), fast_check_if_it_works.detach().numpy())
-
+    plot_embeddings_vs_real(
+        _embeddings=reconstructions.detach().numpy(),
+        _real=some_sample.detach().numpy(),
+        channels=channels,
+        height=height,
+        width=width,
+        checkpoint=checkpoint,
+        image_save_path=image_save_path,
+    )
     

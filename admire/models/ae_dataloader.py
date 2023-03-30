@@ -19,6 +19,7 @@ class TimeSeriesDataset(Dataset):
                  normalize: bool = True,
                  window_size: int = 20,
                  slide_length: int = 10,
+                 external_transform: Transform = None
                  ) -> None:
         '''
         `data_dir`: Directory where the data is stored
@@ -27,6 +28,7 @@ class TimeSeriesDataset(Dataset):
         `normalize`: Whether to normalize the data
         `window_size`: Size of the window to use for the time series
         `slide_length`: How many time steps to slide the window by
+        `external_transform`: If you want to use a pre-fitted transform, pass it here
         '''
 
         self.time_series: npt.NDarray = None
@@ -39,6 +41,10 @@ class TimeSeriesDataset(Dataset):
         # Get all filenames in data_dir
         _, _, filenames = os.walk(data_dir).__next__()
         logger.debug(f"Found {len(filenames)} files in {data_dir}. These are: {filenames}")
+        
+        # Sort filenames to ensure they are in order
+        # TODO: Later this should be made more robust so we always know the order and which nodes are which
+        filenames.sort()
 
         # Concatenate data into one time series array (numpy array)
         # TODO: This is not efficient as for bigger datasets may load too much data into memory
@@ -61,12 +67,15 @@ class TimeSeriesDataset(Dataset):
         
         logger.debug(f"Time series shape after concatenation: {self.time_series.shape}")
         
-        if self.normalize:
+        if self.normalize and not external_transform:
             logger.info("Normalizing time series")
             self.transform = Transform()
             self.transform.fit(self.time_series)
             self.time_series = self.transform.normalize_time_series(self.time_series)
-        
+        elif self.normalize and external_transform: # Useful for testing
+            logger.info("Normalizing time series with external transform")
+            self.transform = external_transform
+            self.time_series = self.transform.normalize_time_series(self.time_series)
                 
         # It is important to convert to float32, otherwise pytorch will complain
         self.time_series = self.time_series.astype(np.float32)
@@ -99,6 +108,10 @@ class TimeSeriesDataset(Dataset):
     def get_input_layer_shape(self):
         '''(n_features x n_nodes x n_time_steps)'''
         return self.time_series.shape[0], self.time_series.shape[1], self.window_size
+    
+    def get_transform(self):
+        '''Returns the transform object used to normalize the data'''
+        return self.transform
     
 
 if __name__ == '__main__':
