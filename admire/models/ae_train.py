@@ -55,7 +55,7 @@ def calculate_linear_layer_size_after_conv(input_shape, kernel_size, stride, pad
 if __name__ == "__main__":
     
     # Setup data generator class and load it into a pytorch dataloader
-    dataset = TimeSeriesDataset(data_dir="data/processed/")
+    dataset = TimeSeriesDataset(data_dir="data/processed/", normalize=True)
     train_set, val_set = torch.utils.data.random_split(dataset, [0.8, 0.2])
     
     train_loader = DataLoader(

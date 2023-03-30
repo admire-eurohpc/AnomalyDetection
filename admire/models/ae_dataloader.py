@@ -7,6 +7,8 @@ import logging
 import tqdm
 import matplotlib.pyplot as plt
 
+from utils.transformations import Transform
+
 logger = logging.getLogger(__name__)
 
 class TimeSeriesDataset(Dataset):
@@ -14,6 +16,7 @@ class TimeSeriesDataset(Dataset):
     def __init__(self, data_dir: str, 
                  transform=None, 
                  target_transform=None, 
+                 normalize: bool = True,
                  window_size: int = 20,
                  slide_length: int = 10,
                  ) -> None:
@@ -21,6 +24,7 @@ class TimeSeriesDataset(Dataset):
         `data_dir`: Directory where the data is stored
         `transform`: Transform to apply to the data [NOT IMPLEMENTED]
         `target_transform`: Transform to apply to the target [NOT IMPLEMENTED]
+        `normalize`: Whether to normalize the data
         `window_size`: Size of the window to use for the time series
         `slide_length`: How many time steps to slide the window by
         '''
@@ -30,13 +34,15 @@ class TimeSeriesDataset(Dataset):
         self.slide_length = slide_length
         self.transform = transform
         self.target_transform = target_transform
+        self.normalize = normalize
         
         # Get all filenames in data_dir
         _, _, filenames = os.walk(data_dir).__next__()
         logger.debug(f"Found {len(filenames)} files in {data_dir}. These are: {filenames}")
 
         # Concatenate data into one time series array (numpy array)
-        # TODO: This is not efficient, but it works for now
+        # TODO: This is not efficient as for bigger datasets may load too much data into memory
+        # but it works for now
         # Desired shape will be (n_features x n_nodes x n_time_steps )
         # e.g. (3 features x 100 nodes x 1000 time ticks )
         for filename in tqdm.tqdm(filenames, desc="Loading ts data"):
@@ -55,12 +61,18 @@ class TimeSeriesDataset(Dataset):
         
         logger.debug(f"Time series shape after concatenation: {self.time_series.shape}")
         
+        if self.normalize:
+            logger.info("Normalizing time series")
+            self.transform = Transform()
+            self.transform.fit(self.time_series)
+            self.time_series = self.transform.normalize_time_series(self.time_series)
+        
                 
         # It is important to convert to float32, otherwise pytorch will complain
         self.time_series = self.time_series.astype(np.float32)
         
         logger.debug(f"Time series shape: {self.time_series.shape}")
-        logger.debug(f'Time series sample: {self.time_series[0:3, 0:3, :]}')
+        #logger.debug(f'Time series sample: {self.time_series[0:3, 0:3, :]}')
 
 
     def __len__(self):
@@ -75,6 +87,10 @@ class TimeSeriesDataset(Dataset):
         return ts.flatten()
     
     def get_time_series(self):
+        '''Returns the time series. If normalized, returns the denormalized time series'''
+        if self.normalize:
+            return self.transform.denormalize_time_series(self.time_series)
+        
         return self.time_series
     
     def get_input_layer_size_flattened(self):
@@ -88,7 +104,7 @@ class TimeSeriesDataset(Dataset):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
 
-    dataset = TimeSeriesDataset(data_dir="data/processed/")
+    dataset = TimeSeriesDataset(data_dir="data/processed/", normalize=True)
 
     d = next(iter(dataset))
     print(d.shape)
