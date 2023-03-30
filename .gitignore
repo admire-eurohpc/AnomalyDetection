@@ -10,3 +10,4 @@
 
 images/
 *lightning_logs*
+data/*csv
