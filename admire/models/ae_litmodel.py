@@ -71,6 +71,6 @@ class LitAutoEncoder(pl.LightningModule):
         x = batch
         x_hat = self.forward(x)
         loss = self._get_reconstruction_loss(x, x_hat)
-        self.log('test_loss', loss)
-        self.log('test_mae', self._get_reconstruction_mae(x, x_hat))
+        self.log('test_reconstruction_loss(mse)', loss)
+        self.log('test_reconstruction_mae', self._get_reconstruction_mae(x, x_hat))
 
