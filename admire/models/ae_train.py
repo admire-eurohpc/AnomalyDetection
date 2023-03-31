@@ -11,6 +11,7 @@ from torch import optim, nn, utils, Tensor
 import lightning as L
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import TensorBoardLogger
+import tqdm
 
 # -- Own modules --
 from ae_encoder import Encoder
@@ -43,6 +44,7 @@ torch.backends.cudnn.benchmark = False
 BATCH_SIZE = 32
 MAX_EPOCHS = 2
 SHUFFLE = True
+VAL_SHUFFLE = False
 WINDOW_SIZE = 20
 TRAIN_SLIDE = 10
 TEST_SLIDE = 1
@@ -67,13 +69,11 @@ if __name__ == "__main__":
         dataset=train_set,
         batch_size=BATCH_SIZE,
         shuffle=SHUFFLE,
-        num_workers=-1,
         )
     val_loader = DataLoader(
         dataset=val_set,
         batch_size=BATCH_SIZE,
-        shuffle=SHUFFLE,
-        num_workers=-1,
+        shuffle=VAL_SHUFFLE,
         )
     
     # Setup test data
@@ -82,7 +82,7 @@ if __name__ == "__main__":
                                      external_transform=dataset.get_transform(), # Use same transform as for training
                                      window_size=WINDOW_SIZE, 
                                      slide_length=TEST_SLIDE)
-    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=-1)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
     
     # Get input size and shapes
     input_size = dataset.get_input_layer_size_flattened()
@@ -178,22 +178,18 @@ if __name__ == "__main__":
     # ----- TEST ----- #
     
     # Now test the model on february data
-    # Run the model on the entire test set and report MAE 
-    # encoder = autoencoder.encoder.eval()
-    # decoder = autoencoder.decoder.eval()
+    # Run the model on the entire test set and report reconstruction error to tensorboard
     autoencoder.eval()
     autoencoder.freeze()
     
     logging.debug(f"Running model on test set")
-    test_trainer = pl.Trainer(logger=logger)
-    test_trainer.test(autoencoder, dataloaders=test_dataloader, ckpt_path=checkpoint)
 
-    # test_reconstruction_mean_absolute_error = []
-    # for idx, batch in enumerate(test_dataloader):
-    #     autoencoder.test_step(batch, idx)
-    #     test_reconstruction_mean_absolute_error.append(
-    #         torch.sum(torch.abs(batch - decoder(encoder(batch)))).detach().numpy()
-    #     )
+    test_reconstruction_mean_absolute_error = []
+    for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test", total=len(test_dataloader)):
+        err = torch.sum(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))).detach().numpy()
+        logger.experiment.add_scalar("test_reconstruction_error", err, idx)
+    
+    # Display the reconstruction error over time manually
     
     # dates = pd.read_parquet("data/processed/test/test_e1105.parquet")['date']
     # dates = pd.to_datetime(dates)
@@ -208,17 +204,18 @@ if __name__ == "__main__":
     # )
 
 
-    # some_sample = next(iter(test_dataloader))
-    # reconstructions = decoder(encoder(some_sample))
-    # logging.debug(f"Plotting reconstructions vs real")
+    # Plot some reconstructions vs real examples
+    some_sample = next(iter(test_dataloader))
+    reconstructions = autoencoder.decoder(autoencoder.encoder(some_sample))
+    logging.debug(f"Plotting reconstructions vs real")
             
-    # plot_embeddings_vs_real(
-    #     _embeddings=reconstructions.detach().numpy(),
-    #     _real=some_sample.detach().numpy(),
-    #     channels=channels,
-    #     height=height,
-    #     width=width,
-    #     checkpoint=checkpoint,
-    #     image_save_path=image_save_path,
-    # )
+    plot_embeddings_vs_real(
+        _embeddings=reconstructions.detach().numpy(),
+        _real=some_sample.detach().numpy(),
+        channels=channels,
+        height=height,
+        width=width,
+        checkpoint=checkpoint,
+        image_save_path=image_save_path,
+    )
     
