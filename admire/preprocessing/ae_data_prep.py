@@ -121,6 +121,7 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
 
 if __name__ == '__main__':
     data_dir = "data/"
+    save_data_dir = f"data/processed/"
     important_cols = ['date', 'hostname', 'power', 'cpu1', 'cpu2']
     files_to_read = ['01.2023_tempdata.parquet', 'temp_data1.parquet', 'temp_data2.parquet', 'temp_data3.parquet', 'temp_data4.parquet'] # Only February data
     
@@ -141,7 +142,7 @@ if __name__ == '__main__':
     logging.info(f'Hosts to process {hosts}')
     
     for type in ['train', 'test']:
-        save_data_dir = f"data/processed/{type}"
+        
         df = raw_df.copy()
         
         if type == 'test':
@@ -171,4 +172,19 @@ if __name__ == '__main__':
         for host in tqdm(hosts, desc='Filling missing data'):
             logger.debug(f'Filling missing data for {host}')
             _df_host = fill_missing_data(df[df['hostname'] == host].copy(), date_range_start, date_range_end, host)
-            save_data(_df_host, f'{host}', save_data_dir, keep_columns=important_cols)
+            save_data(_df_host, f'{host}', os.path.join(save_data_dir, type), keep_columns=important_cols)
+            
+    
+    #TODO!: IMPORTANT - make sure that we take the same hosts for train and test
+    # Remove hosts that are in train but not in test and vice versa because we need consistency
+    _, _, train_host_names = next(os.walk(os.path.join(save_data_dir, 'train')))
+    _, _, test_host_names = next(os.walk(os.path.join(save_data_dir, 'test')))
+    
+    if set(train_host_names) != set(test_host_names):
+        for diff in set(train_host_names) - set(test_host_names):
+            logger.error(f'{diff} is in train but not in test. Removing it')
+            os.remove(os.path.join(save_data_dir, 'train', diff))
+        for diff in set(test_host_names) - set(train_host_names):
+            logger.error(f'{diff} is in test but not in train. Removing it')
+            os.remove(os.path.join(save_data_dir, 'test', diff))
+            
