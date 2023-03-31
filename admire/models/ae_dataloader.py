@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 import numpy.typing as npt
+import torch
 from torch.utils.data import Dataset
 import logging
 import tqdm
@@ -81,7 +82,6 @@ class TimeSeriesDataset(Dataset):
         self.time_series = self.time_series.astype(np.float32)
         
         logger.debug(f"Time series shape: {self.time_series.shape}")
-        #logger.debug(f'Time series sample: {self.time_series[0:3, 0:3, :]}')
 
 
     def __len__(self):
@@ -93,7 +93,7 @@ class TimeSeriesDataset(Dataset):
     def __getitem__(self, idx): 
         start = idx * self.slide_length # Each window starts at a multiple of the slide length
         ts = self.time_series[:, :, start:start+self.window_size] # Get the window
-        return ts.flatten()
+        return torch.Tensor(ts.flatten())
     
     def get_time_series(self):
         '''Returns the time series. If normalized, returns the denormalized time series'''

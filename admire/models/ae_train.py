@@ -42,7 +42,7 @@ torch.backends.cudnn.benchmark = False
 
 
 BATCH_SIZE = 32
-MAX_EPOCHS = 2
+MAX_EPOCHS = 100
 SHUFFLE = True
 VAL_SHUFFLE = False
 WINDOW_SIZE = 20
@@ -64,16 +64,23 @@ if __name__ == "__main__":
                                 window_size=WINDOW_SIZE, 
                                 slide_length=TRAIN_SLIDE)
     train_set, val_set = torch.utils.data.random_split(dataset, [0.8, 0.2])
+
+    use_cuda = torch.cuda.is_available()
+    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
     
     train_loader = DataLoader(
         dataset=train_set,
         batch_size=BATCH_SIZE,
         shuffle=SHUFFLE,
+        drop_last=True,
+        **kwargs,
         )
     val_loader = DataLoader(
         dataset=val_set,
         batch_size=BATCH_SIZE,
         shuffle=VAL_SHUFFLE,
+        drop_last=True,
+        **kwargs,
         )
     
     # Setup test data
@@ -82,7 +89,7 @@ if __name__ == "__main__":
                                      external_transform=dataset.get_transform(), # Use same transform as for training
                                      window_size=WINDOW_SIZE, 
                                      slide_length=TEST_SLIDE)
-    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=True, **kwargs)
     
     # Get input size and shapes
     input_size = dataset.get_input_layer_size_flattened()
@@ -154,6 +161,7 @@ if __name__ == "__main__":
         callbacks=[
             early_stop_callback,
             ],
+        # accelerator="gpu", devices=1, strategy="auto",
         )
     trainer.fit(
         model=autoencoder, 

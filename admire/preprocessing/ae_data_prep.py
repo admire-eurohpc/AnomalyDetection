@@ -131,7 +131,7 @@ if __name__ == '__main__':
     
     hosts_blacklist = ['e2015'] # 2015 is known to be faulty
 
-    TAKE_NODES = 50
+    TAKE_NODES = 150
     hosts_to_take = raw_df['hostname'].unique().tolist()
     for host in hosts_blacklist:
         hosts_to_take.remove(host)
