@@ -3,6 +3,7 @@ import os
 import pandas as pd
 from datetime import datetime
 import numpy as np
+import matplotlib.pyplot as plt
 
 # -- Pytorch imports --
 import torch
@@ -42,7 +43,7 @@ torch.backends.cudnn.benchmark = False
 
 
 BATCH_SIZE = 32
-MAX_EPOCHS = 100
+MAX_EPOCHS = 1
 SHUFFLE = True
 VAL_SHUFFLE = False
 WINDOW_SIZE = 20
@@ -51,9 +52,9 @@ TEST_SLIDE = 1
 
 
 # THIS NUMBERS WILL BE MULTIPLIED BY NUMBER OF NODES 
-ENCODER_LAYERS = np.array([32, 16])
-DECODER_LAYERS = np.array([16, 32])
-LATENT_DIM = 8 
+ENCODER_LAYERS = np.array([24, 12])
+DECODER_LAYERS = np.array([12, 24])
+LATENT_DIM = 6 
 
 
 if __name__ == "__main__":
@@ -143,7 +144,7 @@ if __name__ == "__main__":
     logging.debug(f'Decoder Summary: {decoder}')
 
     # Init the lightning autoencoder
-    autoencoder = LitAutoEncoder(input_shape, LATENT_DIM, encoder, decoder)
+    autoencoder = LitAutoEncoder(input_shape, LATENT_DIM, encoder, decoder, lr=1e-4)
     
     # Add early stopping
     early_stop_callback = pl.callbacks.EarlyStopping(
@@ -153,6 +154,8 @@ if __name__ == "__main__":
         verbose=False, 
         mode="min"
         )
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(save_top_k=1, verbose=True, monitor="val_loss", mode="min")
+
 
     logging.debug(f'Autoencoder Summary: {autoencoder}')
     trainer = pl.Trainer(
@@ -160,7 +163,9 @@ if __name__ == "__main__":
         logger=logger,
         callbacks=[
             early_stop_callback,
-            ],
+            checkpoint_callback
+            ],   
+        enable_checkpointing=True,
         # accelerator="gpu", devices=1, strategy="auto",
         )
     trainer.fit(
@@ -170,13 +175,9 @@ if __name__ == "__main__":
         )
 
     logging.debug(os.path.join(logger.save_dir, logger.name, logger.version, "checkpoints"))
-    # load checkpoint
-    path = os.path.join(logger.save_dir, logger.name, logger.version, "checkpoints")
-    filename = os.walk(path).__next__()[2][0]
-    checkpoint = os.path.join(path, filename)
     
     autoencoder = LitAutoEncoder.load_from_checkpoint(
-                                checkpoint, 
+                                checkpoint_path=checkpoint_callback.best_model_path,
                                 encoder=encoder, 
                                 decoder=decoder,
                                 input_shape=input_shape,
@@ -193,37 +194,57 @@ if __name__ == "__main__":
     logging.debug(f"Running model on test set")
 
     test_reconstruction_mean_absolute_error = []
-    for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test", total=len(test_dataloader)):
-        err = torch.sum(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))).detach().numpy()
+    # Run evaluation on test set
+    for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=len(test_dataloader)):
+        print(batch)
+        err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))).detach().numpy()
         logger.experiment.add_scalar("test_reconstruction_error", err, idx)
+        test_reconstruction_mean_absolute_error.append(err)
     
-    # Display the reconstruction error over time manually
-    
-    # dates = pd.read_parquet("data/processed/test/test_e1105.parquet")['date']
-    # dates = pd.to_datetime(dates)
-    # logging.debug(f'Date range: {dates.min()} - {dates.max()}')
-    
-    # dates = [i for i in range(len(test_reconstruction_mean_absolute_error))]
-    
-    # logging.debug(f"Plotting reconstruction error over time")
-    # plot_reconstruction_error_over_time(
-    #     reconstruction_errors=test_reconstruction_mean_absolute_error,
-    #     time_axis=dates
-    # )
+
+    # Plot reconstruction error over time
+    dates_range = test_dataset.get_dates_range()
+    logging.debug(f'Date range: {dates_range["end"]} - {dates_range["start"]}')
+    dates_range = pd.date_range(start=dates_range["start"], end=dates_range["end"], freq='1min', tz='Europe/Warsaw')
+    dates_range = dates_range.to_numpy()[:len(test_reconstruction_mean_absolute_error)] # Fit dates range to actual data (bear in mind that last date is max - WINDOW_SIZE)
+    logging.debug(f"Plotting reconstruction error over time")
+    plot_reconstruction_error_over_time(
+        reconstruction_errors=test_reconstruction_mean_absolute_error,
+        time_axis=dates_range,
+        write=True,
+        show=False,
+        savedir=image_save_path
+    )
+
+    # Matplotlib scatter
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.scatter(dates_range, test_reconstruction_mean_absolute_error)
+    ax.set_xlabel('Date')
+    ax.set_ylabel('Reconstruction error')
+    ax.set_title('Reconstruction error over time')
+    fig.savefig(os.path.join(image_save_path, 'plt_reconstruction_error_over_time.png'))
+    logger.experiment.add_figure("reconstruction_error_over_time_figure", fig)
+    logging.debug(f"Saved reconstruction error over time figure")
 
 
     # Plot some reconstructions vs real examples
-    some_sample = next(iter(test_dataloader))
-    reconstructions = autoencoder.decoder(autoencoder.encoder(some_sample))
     logging.debug(f"Plotting reconstructions vs real")
-            
+    sample = test_dataset.get_time_series()
+    sample = torch.Tensor(sample[:, :, 0:WINDOW_SIZE].flatten())
+    reconstructions = autoencoder.decoder(autoencoder.encoder(sample)).detach().numpy()
+    sample = sample.detach().numpy()
     plot_embeddings_vs_real(
-        _embeddings=reconstructions.detach().numpy(),
-        _real=some_sample.detach().numpy(),
+        _embeddings=reconstructions,
+        _real=sample,
         channels=channels,
         height=height,
         width=width,
-        checkpoint=checkpoint,
+        checkpoint=checkpoint_callback.best_model_path,
         image_save_path=image_save_path,
+        write=True,
+        show=False,
     )
+
+
+    logging.debug(f"Finished")
     

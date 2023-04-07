@@ -12,7 +12,10 @@ def plot_embeddings_vs_real(_embeddings: npt.NDArray,
                             height: int, 
                             width: int, 
                             checkpoint: str, 
-                            image_save_path: str) -> None:
+                            image_save_path: str,
+                            show: bool = False,
+                            write: bool = False,
+                            ) -> None:
         '''
         Plots the embeddings vs the real data.
         
@@ -56,10 +59,15 @@ def plot_embeddings_vs_real(_embeddings: npt.NDArray,
                 height=1000,
                 overwrite=True
                 )
-            fig.write_image(
-                os.path.join(image_save_path, f'validation_set_reconstructed_vs_real_{channel}_node_{height_node}.png')
-                )
-            fig.show()
+            if write:
+                fig.write_image(
+                    os.path.join(image_save_path, f'validation_set_reconstructed_vs_real_{channel}_node_{height_node}.png')
+                    )
+                fig.write_html(
+                    os.path.join(image_save_path, f'validation_set_reconstructed_vs_real_{channel}_node_{height_node}.html')
+                    )
+            if show:
+                fig.show()
             
             
 def plot_reconstruction_error_over_time(reconstruction_errors: List[float],

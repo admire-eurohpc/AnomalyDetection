@@ -1,4 +1,6 @@
+from datetime import datetime
 import os
+from typing import Dict
 import pandas as pd
 import numpy as np
 import numpy.typing as npt
@@ -46,6 +48,11 @@ class TimeSeriesDataset(Dataset):
         # Sort filenames to ensure they are in order
         # TODO: Later this should be made more robust so we always know the order and which nodes are which
         filenames.sort()
+
+        self.dates_range = {}
+        _dates = pd.read_parquet(os.path.join(data_dir, filenames[0]), columns=['date'])
+        self.dates_range['start'] = pd.to_datetime(_dates['date'].min())
+        self.dates_range['end'] =  pd.to_datetime(_dates['date'].max())
 
         # Concatenate data into one time series array (numpy array)
         # TODO: This is not efficient as for bigger datasets may load too much data into memory
@@ -112,6 +119,10 @@ class TimeSeriesDataset(Dataset):
     def get_transform(self):
         '''Returns the transform object used to normalize the data'''
         return self.transform
+    
+    def get_dates_range(self) -> Dict[str, datetime]:
+        '''Returns the start and end dates of the time series'''
+        return self.dates_range
     
 
 if __name__ == '__main__':
