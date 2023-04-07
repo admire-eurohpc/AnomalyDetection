@@ -12,6 +12,8 @@ for hostname in ['e1122']:
     df = pd.read_parquet(f"data/processed/test/{hostname}.parquet")
     df['date'] = pd.to_datetime(df['date'])
 
+    print(df['date'].iloc[5746])
+
 
     print(df.info())
 

@@ -13,10 +13,12 @@ class LitAutoEncoder(pl.LightningModule):
                  latent_dim: int,
                  encoder: nn.Module,
                  decoder: nn.Module,
+                 lr: int = 1e-3,
                  ):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
+        self.lr = lr
 
         self.mae = MeanAbsoluteError()
         self.mape = MeanAbsolutePercentageError()
@@ -40,7 +42,7 @@ class LitAutoEncoder(pl.LightningModule):
         return mape
     
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = optim.Adam(self.parameters(), lr=self.lr)
         return optimizer
     
     def training_step(self, batch, batch_idx):
