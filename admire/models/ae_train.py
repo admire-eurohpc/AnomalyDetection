@@ -43,7 +43,7 @@ torch.backends.cudnn.benchmark = False
 
 
 BATCH_SIZE = 32
-MAX_EPOCHS = 1
+MAX_EPOCHS = 100
 SHUFFLE = True
 VAL_SHUFFLE = False
 WINDOW_SIZE = 20
