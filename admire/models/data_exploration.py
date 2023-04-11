@@ -9,7 +9,7 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 from tslearn.clustering import TimeSeriesKMeans
 from sklearn.cluster import DBSCAN
-from sklearn.preprocessing import Normalizer
+from sklearn.preprocessing import Normalizer, StandardScaler
 from sklearn.neighbors import LocalOutlierFactor
 from scipy.cluster.hierarchy import single, complete, average, ward, fcluster
 
@@ -46,7 +46,7 @@ def dbscan_clustering(data: np.array) -> Any:
     norm = Normalizer()
     data = cdist_dtw(data, n_jobs=-1, verbose=1)
     data = norm.fit_transform(data)
-    model = DBSCAN(eps=0.0017, min_samples=8, metric="precomputed").fit(data)
+    model = DBSCAN(eps=0.018, min_samples=15, metric="precomputed").fit(data)
     labels = model.labels_
     n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
     print(n_clusters)        

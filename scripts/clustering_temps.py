@@ -34,10 +34,12 @@ def extract_power_series(df: pd.DataFrame, date: datetime.date, only_whole: bool
                 x.append(res)
             else: pass
         else: #TODO Czy jest sens w ogóle podejmować się clusteringu pomiarów o zmiennej długości? 
-            res = [df_temp['power'].reset_index(drop=True).to_list(), df_temp['cpu1'].reset_index(drop=True).to_list(), 
-                   df_temp['cpu2'].reset_index(drop=True).to_list(),df_temp['hostname'].iloc[0],
-                   df_temp['date'].reset_index(drop=True).to_list(), df_temp['cpus_alloc'].reset_index(drop=True).to_list()]
-            x.append(res)
+            if len(df_temp['power']) != 144 and len(df_temp['power']) > 70:
+                res = [df_temp['power'].reset_index(drop=True).to_list(), df_temp['cpu1'].reset_index(drop=True).to_list(), 
+                    df_temp['cpu2'].reset_index(drop=True).to_list(),df_temp['hostname'].iloc[0],
+                    df_temp['date'].reset_index(drop=True).to_list(), df_temp['cpus_alloc'].reset_index(drop=True).to_list()]
+                x.append(res)
+            else: pass
 
     return x
 def prep_data(df: pd.DataFrame, date_min: datetime.date, date_max: datetime.date,  
@@ -64,8 +66,9 @@ def prep_data(df: pd.DataFrame, date_min: datetime.date, date_max: datetime.date
         x_ = to_time_series_dataset(df_series['power_series'])
         print(f"series count: {np.shape(x_)[0]}")
     else:
-        print(np.shape(x))
-        x_ = to_time_series_dataset(x)
+        x_ = to_time_series_dataset(df_series['power_series'])
+        print(f"series count: {np.shape(x_)[0]}")
+
 
 
     return df_series, x_
@@ -75,28 +78,35 @@ def clustering(method: str):
     For data longer than 1000 series it takes a lot of time to compute
     '''
     df = pd.read_parquet(os.path.join(ROOT_DIR, 'data', '1-22.02.2023_tempdata_trimmed.parquet'))
-    df_series, x_ = prep_data(df, datetime.date(2023, 2, 13), datetime.date(2023, 2, 13), True)
+    
 
-    if method=="dbscan":
-        model, clusters = dbscan_clustering(x_)
-        subplots_clustering(clusters, model.labels_, df_series['power_series'])
-    elif method=='kmeans':
-        model, clusters = kmeans_clustering(x_, n_clusters=8)
-        subplots_clustering(clusters, model.labels_, df_series['power_series'])
-    elif method=="lof":
-        model, lof_labels, clusters = local_outlier_factor(x_)
-        #subplots_clustering(clusters, lof_labels, df_series['power_series'])
-        df_series['negative_outlier_factor'] = model.negative_outlier_factor_
-        df_series = df_series.sort_values('negative_outlier_factor', ascending=True)
-        num_of_outliers = 20
-        print(df_series.iloc[0:num_of_outliers]['negative_outlier_factor'])
-        subplots_clustering(num_of_outliers, range(0,num_of_outliers), 
-                            df_series.iloc[0:num_of_outliers]['cpus_alloc'].to_numpy()) #plot of 10 biggest outliers
-        subplots_clustering(num_of_outliers, range(0,num_of_outliers), 
-                            df_series.iloc[0:num_of_outliers]['power_series'].to_numpy()) #plot of 10 biggest outliers
-    elif method=="hierarchical":
-        Z, cluster_labels, clusters = hierarchical_clustering(x_)
-        subplots_clustering(clusters, cluster_labels, df_series['power_series'])
+    if method=="lof":
+        for i in range(0,8):
+            df_series, x_ = prep_data(df, datetime.date(2023, 2, 1), datetime.date(2023, 2, 3), False, datetime.date(2023, 2, 6+i))
+            model, lof_labels, clusters = local_outlier_factor(x_)
+            
+            #subplots_clustering(clusters, lof_labels, df_series['power_series'])
+            df_series['negative_outlier_factor'] = model.negative_outlier_factor_
+            df_series = df_series.sort_values('negative_outlier_factor', ascending=True)
+            num_of_outliers = 20
+            print(df_series.iloc[0:num_of_outliers]['negative_outlier_factor'])
+            print(np.average(df_series.iloc[0:num_of_outliers]['negative_outlier_factor']))
+            subplots_clustering(num_of_outliers, range(0,num_of_outliers), 
+                                df_series.iloc[0:num_of_outliers]['cpus_alloc'].to_numpy()) 
+            subplots_clustering(num_of_outliers, range(0,num_of_outliers), 
+                                df_series.iloc[0:num_of_outliers]['power_series'].to_numpy()) 
+    else:
+        df_series, x_ = prep_data(df, datetime.date(2023, 2, 7), datetime.date(2023, 2, 7), False)
+        if method=='kmeans':
+            model, clusters = kmeans_clustering(x_, n_clusters=8)
+            subplots_clustering(clusters, model.labels_, df_series['power_series'])
+        elif method=="dbscan":
+            model, clusters = dbscan_clustering(x_)
+            subplots_clustering(clusters, model.labels_, df_series['power_series'])
+        
+        elif method=="hierarchical":
+            Z, cluster_labels, clusters = hierarchical_clustering(x_)
+            subplots_clustering(clusters, cluster_labels, df_series['power_series'])
 
 
 if __name__ == "__main__":
