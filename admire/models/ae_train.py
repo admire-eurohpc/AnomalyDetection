@@ -1,27 +1,38 @@
-from ae_litmodel import LitAutoEncoder
-from ae_dataloader import TimeSeriesDataset
-import lightning.pytorch as pl
-from torch.utils.data import DataLoader
-from torch import optim, nn, utils, Tensor
-import torch
-import lightning as L
-from lightning.pytorch.loggers import TensorBoardLogger
 import logging
 import os 
-from torchsummary import summary
+import pandas as pd
 from datetime import datetime
+import numpy as np
+import matplotlib.pyplot as plt
 
+# -- Pytorch imports --
+import torch
+from torch.utils.data import DataLoader
+from torch import optim, nn, utils, Tensor
+import lightning as L
+import lightning.pytorch as pl
+from lightning.pytorch.loggers import TensorBoardLogger
+import tqdm
+
+# -- Own modules --
 from ae_encoder import Encoder
 from ae_decoder import Decoder
+from ae_litmodel import LitAutoEncoder
+from ae_dataloader import TimeSeriesDataset
+from utils.plotting import plot_embeddings_vs_real, plot_reconstruction_error_over_time
+
 
 logging.basicConfig(level=logging.DEBUG)
+
 
 image_save_path = os.path.join('images', 'training')
 if not os.path.exists(image_save_path):
     os.makedirs(image_save_path)
 
+
 _tmp_name = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
 logger = TensorBoardLogger(save_dir="lightning_logs", name="ae", version=f'{_tmp_name}')
+
 
 # Setting the seed
 L.seed_everything(42)
@@ -31,47 +42,58 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 
-LATENT_DIM = 32
-BATCH_SIZE = 64
-MAX_EPOCHS = 150
+BATCH_SIZE = 32
+MAX_EPOCHS = 100
 SHUFFLE = True
-ENCODER_LAYERS = [256, 64]
-DECODER_LAYERS = [64, 256]
+VAL_SHUFFLE = False
+WINDOW_SIZE = 20
+TRAIN_SLIDE = 10
+TEST_SLIDE = 1
 
 
-def calculate_linear_layer_size_after_conv(input_shape, kernel_size, stride, padding):
-    '''
-    Calculates the size of the linear layer after a convolutional layer.
-    
-    input_shape: tuple of ints (channels, height, width)
-    '''
-    channels, height, width = input_shape
-    height = (height - kernel_size + 2*padding) / stride + 1
-    width = (width - kernel_size + 2*padding) / stride + 1
-    return int(channels * height * width)
-
+# THIS NUMBERS WILL BE MULTIPLIED BY NUMBER OF NODES 
+ENCODER_LAYERS = np.array([24, 12])
+DECODER_LAYERS = np.array([12, 24])
+LATENT_DIM = 6 
 
 
 if __name__ == "__main__":
     
     # Setup data generator class and load it into a pytorch dataloader
-    dataset = TimeSeriesDataset(data_dir="data/processed/", normalize=True)
+    dataset = TimeSeriesDataset(data_dir="data/processed/train/", 
+                                normalize=True, 
+                                window_size=WINDOW_SIZE, 
+                                slide_length=TRAIN_SLIDE)
     train_set, val_set = torch.utils.data.random_split(dataset, [0.8, 0.2])
+
+    use_cuda = torch.cuda.is_available()
+    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
     
     train_loader = DataLoader(
         dataset=train_set,
         batch_size=BATCH_SIZE,
-        shuffle=SHUFFLE
+        shuffle=SHUFFLE,
+        drop_last=True,
+        **kwargs,
         )
     val_loader = DataLoader(
         dataset=val_set,
         batch_size=BATCH_SIZE,
-        shuffle=SHUFFLE
+        shuffle=VAL_SHUFFLE,
+        drop_last=True,
+        **kwargs,
         )
     
+    # Setup test data
+    test_dataset = TimeSeriesDataset(data_dir="data/processed/test/", 
+                                     normalize=True, 
+                                     external_transform=dataset.get_transform(), # Use same transform as for training
+                                     window_size=WINDOW_SIZE, 
+                                     slide_length=TEST_SLIDE)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=True, **kwargs)
     
+    # Get input size and shapes
     input_size = dataset.get_input_layer_size_flattened()
-
     input_shape = dataset.get_input_layer_shape()
     channels = input_shape[0]
     height = input_shape[1]
@@ -79,6 +101,23 @@ if __name__ == "__main__":
     
     logging.debug(f"input_shape: {input_shape}")
     logging.debug(f'channels: {channels}, height: {height}, width: {width}')
+
+    # TODO: Do it a bit more smart, for now the height means the number of nodes in data
+    ENCODER_LAYERS = ENCODER_LAYERS * height
+    DECODER_LAYERS = DECODER_LAYERS * height 
+    
+    # Log hyperparameters for tensorboard
+    logger.log_hyperparams({
+        'batch_size': BATCH_SIZE,
+        'max_epochs': MAX_EPOCHS,
+        'shuffle': SHUFFLE,
+        'window_size': WINDOW_SIZE,
+        'train_slide': TRAIN_SLIDE,
+        'test_slide': TEST_SLIDE,
+        'encoder_layers': ENCODER_LAYERS,
+        'decoder_layers': DECODER_LAYERS,
+        'latent_dim': LATENT_DIM,
+    })
 
     # BUILD ENCODER
     encoder = nn.Sequential()
@@ -104,25 +143,30 @@ if __name__ == "__main__":
     decoder.append(nn.Linear(DECODER_LAYERS[-1], channels * width * height))
     logging.debug(f'Decoder Summary: {decoder}')
 
-    # Init the autoencoder
-    autoencoder = LitAutoEncoder(input_shape, LATENT_DIM, encoder, decoder)
+    # Init the lightning autoencoder
+    autoencoder = LitAutoEncoder(input_shape, LATENT_DIM, encoder, decoder, lr=1e-4)
     
     # Add early stopping
     early_stop_callback = pl.callbacks.EarlyStopping(
         monitor="val_loss", 
         min_delta=0.00, 
-        patience=5, 
+        patience=10, 
         verbose=False, 
         mode="min"
         )
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(save_top_k=1, verbose=True, monitor="val_loss", mode="min")
 
-    # train the model (hint: here are some helpful Trainer arguments for rapid idea iteration)
+
+    logging.debug(f'Autoencoder Summary: {autoencoder}')
     trainer = pl.Trainer(
         max_epochs=MAX_EPOCHS,
         logger=logger,
         callbacks=[
             early_stop_callback,
-            ],
+            checkpoint_callback
+            ],   
+        enable_checkpointing=True,
+        # accelerator="gpu", devices=1, strategy="auto",
         )
     trainer.fit(
         model=autoencoder, 
@@ -130,78 +174,77 @@ if __name__ == "__main__":
         val_dataloaders=val_loader
         )
 
-    print(os.path.join(logger.save_dir, logger.name, logger.version, "checkpoints"))
-    # load checkpoint
-    path = os.path.join(logger.save_dir, logger.name, logger.version, "checkpoints")
-    filename = os.walk(path).__next__()[2][0]
-    checkpoint = os.path.join(path, filename)
+    logging.debug(os.path.join(logger.save_dir, logger.name, logger.version, "checkpoints"))
     
-
     autoencoder = LitAutoEncoder.load_from_checkpoint(
-                                checkpoint, 
+                                checkpoint_path=checkpoint_callback.best_model_path,
                                 encoder=encoder, 
                                 decoder=decoder,
                                 input_shape=input_shape,
                                 latent_dim=LATENT_DIM
                                 )
-
-    # choose your trained nn.Module
-    encoder = autoencoder.encoder
-    encoder.eval()
-
-    # embed 4 fake images!
-    fast_check_if_it_works = next(iter(val_loader))
-    embeddings = decoder(encoder(fast_check_if_it_works))
-    print("⚡" * 20, "\nPredictions:\n", embeddings, "\n", "⚡" * 20)
-    print("⚡" * 20, "\nOriginal: \n", fast_check_if_it_works, "\n", "⚡" * 20)
     
+    # ----- TEST ----- #
     
-    def plot_embeddings_vs_real(_embeddings, _real):
-        '''
-        Plots the embeddings vs the real data.
-        '''
-        import plotly.express as px
-        import plotly.io as pio
-        import plotly.graph_objects as go
-        from plotly.subplots import make_subplots
-        
-        pio.renderers.default = "browser"
-        
-        _embeddings = _embeddings.reshape(-1, channels, height, width)
-        _real = _real.reshape(-1, channels, height, width)
-        
-        time_dim = [i for i in range(_embeddings.shape[3])]
-        
-        indices = [0, 1, 2, 3, 10, 11, 12, 13, 14] # 9 random indices
-        channel = ['power', 'cpu1', 'cpu2']
-        height_node = 0
+    # Now test the model on february data
+    # Run the model on the entire test set and report reconstruction error to tensorboard
+    autoencoder.eval()
+    autoencoder.freeze()
+    
+    logging.debug(f"Running model on test set")
 
-        for c, channel in enumerate(channel):
-            fig = make_subplots(rows=3, cols=3)
-            for i, idx in enumerate(indices):
-                
-                fig.add_scatter(x=time_dim, y=_embeddings[idx][c][height_node].astype(float), 
-                                mode='lines+markers', name='Reconstructed',  
-                                line = dict(color='royalblue', width=4, dash='dash'), row=i % 3 + 1, col=i // 3 + 1)
-                
-                fig.add_scatter(x=time_dim, y=_real[idx][c][height_node].astype(float), 
-                                mode='lines+markers', name='Real',  
-                                line = dict(color='red', width=4, dash='dot'), row=i % 3 + 1, col=i // 3 + 1)
-                
-            fig.update_traces(mode='lines+markers' ,overwrite=True)
-            fig.update_traces(marker={'size': 9}, overwrite=True)
-            fig.update_layout(
-                title=f"Validation set Reconstructed vs Real **{channel}** for node (idx) {height_node}\nCheckpoint: '{checkpoint}'",
-            )
-            fig.update_layout(
-                autosize=False,
-                width=1400,
-                height=1000,
-                overwrite=True
-                )
-            fig.write_image(os.path.join(image_save_path, f'validation_set_reconstructed_vs_real_{channel}_node_{height_node}.png'))
-            fig.show()
-            
-    plot_embeddings_vs_real(embeddings.detach().numpy(), fast_check_if_it_works.detach().numpy())
+    test_reconstruction_mean_absolute_error = []
+    # Run evaluation on test set
+    for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=len(test_dataloader)):
+        print(batch)
+        err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))).detach().numpy()
+        logger.experiment.add_scalar("test_reconstruction_error", err, idx)
+        test_reconstruction_mean_absolute_error.append(err)
+    
 
+    # Plot reconstruction error over time
+    dates_range = test_dataset.get_dates_range()
+    logging.debug(f'Date range: {dates_range["end"]} - {dates_range["start"]}')
+    dates_range = pd.date_range(start=dates_range["start"], end=dates_range["end"], freq='1min', tz='Europe/Warsaw')
+    dates_range = dates_range.to_numpy()[:len(test_reconstruction_mean_absolute_error)] # Fit dates range to actual data (bear in mind that last date is max - WINDOW_SIZE)
+    logging.debug(f"Plotting reconstruction error over time")
+    plot_reconstruction_error_over_time(
+        reconstruction_errors=test_reconstruction_mean_absolute_error,
+        time_axis=dates_range,
+        write=True,
+        show=False,
+        savedir=image_save_path
+    )
+
+    # Matplotlib scatter
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.scatter(dates_range, test_reconstruction_mean_absolute_error)
+    ax.set_xlabel('Date')
+    ax.set_ylabel('Reconstruction error')
+    ax.set_title('Reconstruction error over time')
+    fig.savefig(os.path.join(image_save_path, 'plt_reconstruction_error_over_time.png'))
+    logger.experiment.add_figure("reconstruction_error_over_time_figure", fig)
+    logging.debug(f"Saved reconstruction error over time figure")
+
+
+    # Plot some reconstructions vs real examples
+    logging.debug(f"Plotting reconstructions vs real")
+    sample = test_dataset.get_time_series()
+    sample = torch.Tensor(sample[:, :, 0:WINDOW_SIZE].flatten())
+    reconstructions = autoencoder.decoder(autoencoder.encoder(sample)).detach().numpy()
+    sample = sample.detach().numpy()
+    plot_embeddings_vs_real(
+        _embeddings=reconstructions,
+        _real=sample,
+        channels=channels,
+        height=height,
+        width=width,
+        checkpoint=checkpoint_callback.best_model_path,
+        image_save_path=image_save_path,
+        write=True,
+        show=False,
+    )
+
+
+    logging.debug(f"Finished")
     

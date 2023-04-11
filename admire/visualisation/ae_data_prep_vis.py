@@ -7,10 +7,12 @@ import plotly.io as pio
 pio.renderers.default = "browser"
 column = 'power'
 
-for hostname in ['e1105', 'e1537', 'e1178']:
+for hostname in ['e1122']:
     
-    df = pd.read_parquet(f"data/processed/{hostname}.parquet")
+    df = pd.read_parquet(f"data/processed/test/{hostname}.parquet")
     df['date'] = pd.to_datetime(df['date'])
+
+    print(df['date'].iloc[5746])
 
 
     print(df.info())
