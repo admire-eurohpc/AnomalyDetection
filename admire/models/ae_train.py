@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
+import configparser
 
 # -- Pytorch imports --
 import torch
@@ -23,44 +24,43 @@ from utils.plotting import plot_embeddings_vs_real, plot_reconstruction_error_ov
 
 
 logging.basicConfig(level=logging.DEBUG)
-
+config = configparser.ConfigParser()
+config.read('config.ini')
 
 image_save_path = os.path.join('images', 'training')
 if not os.path.exists(image_save_path):
     os.makedirs(image_save_path)
 
-
 _tmp_name = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
 logger = TensorBoardLogger(save_dir="lightning_logs", name="ae", version=f'{_tmp_name}')
 
-
+SEED = config.getint('TRAINING', 'SEED')
 # Setting the seed
-L.seed_everything(42)
+L.seed_everything(SEED)
 
 # Ensure that all operations are deterministic on GPU (if used) for reproducibility
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
+BATCH_SIZE = config.getint('TRAINING', 'BATCH_SIZE')
+MAX_EPOCHS = config.getint('TRAINING', 'MAX_EPOCHS')
+WINDOW_SIZE = config.getint('TRAINING', 'WINDOW_SIZE')
+TRAIN_SLIDE = config.getint('TRAINING', 'TRAIN_SLIDE')
+TEST_SLIDE = config.getint('TRAINING', 'TEST_SLIDE')
 
-BATCH_SIZE = 32
-MAX_EPOCHS = 100
-SHUFFLE = True
-VAL_SHUFFLE = False
-WINDOW_SIZE = 20
-TRAIN_SLIDE = 10
-TEST_SLIDE = 1
+ENCODER_LAYERS = np.array([int(x) for x in config.get('TRAINING', 'ENCODER_LAYERS').split(',')])
+DECODER_LAYERS = np.array([int(x) for x in config.get('TRAINING', 'DECODER_LAYERS').split(',')])
+LATENT_DIM = config.getint('TRAINING', 'LATENT_DIM')
 
+SHUFFLE = config.getboolean('TRAINING', 'SHUFFLE')
+VAL_SHUFFLE = config.getboolean('TRAINING', 'VAL_SHUFFLE')
 
-# THIS NUMBERS WILL BE MULTIPLIED BY NUMBER OF NODES 
-ENCODER_LAYERS = np.array([24, 12])
-DECODER_LAYERS = np.array([12, 24])
-LATENT_DIM = 6 
-
+PROCESSED_DATA_DIR = config.get('PREPROCESSING', 'processed_data_dir')
 
 if __name__ == "__main__":
     
     # Setup data generator class and load it into a pytorch dataloader
-    dataset = TimeSeriesDataset(data_dir="data/processed/train/", 
+    dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_DATA_DIR}/train/", 
                                 normalize=True, 
                                 window_size=WINDOW_SIZE, 
                                 slide_length=TRAIN_SLIDE)
@@ -85,7 +85,7 @@ if __name__ == "__main__":
         )
     
     # Setup test data
-    test_dataset = TimeSeriesDataset(data_dir="data/processed/test/", 
+    test_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_DATA_DIR}/test/", 
                                      normalize=True, 
                                      external_transform=dataset.get_transform(), # Use same transform as for training
                                      window_size=WINDOW_SIZE, 
@@ -153,8 +153,13 @@ if __name__ == "__main__":
         patience=10, 
         verbose=False, 
         mode="min"
-        )
-    checkpoint_callback = pl.callbacks.ModelCheckpoint(save_top_k=1, verbose=True, monitor="val_loss", mode="min")
+    )
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        save_top_k=config.getint('TRAINING', 'SAVE_TOP_K'),
+        verbose=True, 
+        monitor="val_loss", 
+        mode="min"
+    )
 
 
     logging.debug(f'Autoencoder Summary: {autoencoder}')
@@ -165,7 +170,7 @@ if __name__ == "__main__":
             early_stop_callback,
             checkpoint_callback
             ],   
-        enable_checkpointing=True,
+        enable_checkpointing=config.getboolean('TRAINING', 'ENABLE_CHECKPOINTING'),
         # accelerator="gpu", devices=1, strategy="auto",
         )
     trainer.fit(
