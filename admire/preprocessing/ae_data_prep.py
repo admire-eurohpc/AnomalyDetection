@@ -4,31 +4,52 @@ import pandas as pd
 import numpy as np
 import os
 import logging
+import configparser
 from tqdm import tqdm
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+config = configparser.ConfigParser()
+config.read('config.ini')
 
-def read_data(filenames: List[str], data_dir: str = 'data/', important_cols: List[str] = None) -> pd.DataFrame:
-    """Reads data from parquet files, concatenates and returns a pandas dataframe"""
+def read_data(raw_data_dir: str = 'data/raw', important_cols: List[str] = None) -> pd.DataFrame:
+    """
+    Reads data from parquet files, concatenates and returns a pandas dataframe.
+    It will read all files in the directory specified by `raw_data_dir`.
+    Passing `important_cols` will only read those columns from the files (faster).
+    """
     df = pd.DataFrame()
+    
+    if os.getcwd() not in raw_data_dir:
+        raw_data_dir = os.path.join(os.getcwd(), raw_data_dir)
 
+    if not os.path.exists(raw_data_dir):
+        logger.error(f'Raw data directory {raw_data_dir} does not exist')
+        raise FileNotFoundError(f'Raw data directory {raw_data_dir} does not exist')
+    
+    _, _, filenames = next(os.walk(raw_data_dir))
+    
     for filename in filenames:
         logger.debug(f'Reading {filename}')
-        path = os.path.join(data_dir, filename)
+        path = os.path.join(raw_data_dir, filename)
         if important_cols:
-            df = pd.concat([df, pd.read_parquet(path, columns=important_cols)], ignore_index=True)
+            _df = pd.read_parquet(path, columns=important_cols)
         else:
-            df = pd.concat([df, pd.read_parquet(path)], ignore_index=True)
+            _df = pd.read_parquet(path)
+        
+        _df['date']  = pd.to_datetime(_df['date'])
+        
+        if _df['date'].dt.tz is None:
+            _df['date'] = _df['date'].dt.tz_localize('UTC')
+        else:
+            _df['date'] = _df['date'].dt.tz_convert('UTC')
+        
+        _df['date'] = _df['date'].dt.round('min')
+        
+        df = pd.concat([df, _df], ignore_index=True)
+            
     
     logger.debug(f'DF info {df.info()}')
-
-    
-    # Make sure that date is not more precise than minute
-    if 'date' in df.columns:
-        df['date'] = pd.to_datetime(df['date'])
-        df['date'] = df['date'].dt.round('min')
-
     return df.reset_index(drop=True)
 
 def save_data(df: pd.DataFrame, filename: str, data_dir: str = 'data/processed/', keep_columns: List[str] = None) -> None:
@@ -86,14 +107,14 @@ def remove_data_between_dates(df: pd.DataFrame, start: str, end: str) -> pd.Data
     return df[~((df_time >= start) & (df_time < end))]
 
 def get_data_for_hosts(df: pd.DataFrame, hosts: List[str]) -> pd.DataFrame:
-    """Returns data for hosts"""
+    """Returns/filters datafram for specified hosts only. Hosts should be a list of strings."""
     return df[df['hostname'].isin(hosts)]
 
 def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str, host: str, fill_value: int = 0) -> pd.DataFrame:
     """Fill places where there is no measurements for a host between two dates (inclusive)"""
     _df = pd.DataFrame()
     # Create a dataframe with all dates between start and end in UTC+1 timezone
-    _df['date'] = pd.date_range(start=date_start, end=date_end, freq='1min', tz='Europe/Warsaw')
+    _df['date'] = pd.date_range(start=date_start, end=date_end, freq='1min', tz='UTC')
 
     # convert the 'date' column to datetime format
     origianl_df = origianl_df.copy().drop_duplicates(subset="date")
@@ -105,9 +126,9 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
     # Merge the two dataframes, so that we have fixed data range for each host
     # We perform left join, so that we have all the dates from the artificial range
     # Missing values will be filled with NaN
-    _df = pd.merge(_df, origianl_df, how='left', left_on='date', right_on='date')
+    _df = pd.merge(_df, origianl_df, how='left', on='date')
 
-    logger.debug(f'How many missing values {len(_df[_df["hostname"].isna()])}')
+    logger.debug(f'How many missing values {len(_df[_df["hostname"].isna()])} out of {_df.shape[0]}')
 
     assert shape_before_merge[0] == _df.shape[0], "length of the artificial dataframe before and after merge should be the same"
 
@@ -120,58 +141,70 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
     return _df
 
 if __name__ == '__main__':
-    data_dir = "data/"
-    save_data_dir = f"data/processed/"
+    
+    raw_data_dir = config['PREPROCESSING']['raw_data_dir']
+    data_dir = config['PREPROCESSING']['data_dir']
+    save_data_dir = config['PREPROCESSING']['processed_data_dir']
+    hosts_blacklist = config['PREPROCESSING']['hosts_blacklist'].split(',')
+    TAKE_NODES = int(config['PREPROCESSING']['nodes_count_to_process'])
+    
     important_cols = ['date', 'hostname', 'power', 'cpu1', 'cpu2']
-    files_to_read = ['01.2023_tempdata.parquet', 'temp_data1.parquet', 'temp_data2.parquet', 'temp_data3.parquet', 'temp_data4.parquet'] # Only February data
     
-    raw_df = read_data(files_to_read, data_dir, important_cols)
-    logger.debug(f'Before removing data {raw_df.shape}')
+    raw_df = read_data(raw_data_dir, important_cols)
+    logger.debug(f'Loaded data shape {raw_df.shape}')
+    
+    # Remove hostname from columns that we want to save
     important_cols.remove('hostname')
-    
-    hosts_blacklist = ['e2015'] # 2015 is known to be faulty
 
-    TAKE_NODES = 1000
+    # Remove blacklisted hosts
     hosts_to_take = raw_df['hostname'].unique().tolist()
-    for host in hosts_blacklist:
-        hosts_to_take.remove(host)
+    hosts_to_take = list(filter(lambda x: x not in hosts_blacklist, hosts_to_take))
     
+    # Sort hosts by name and take only first TAKE_NODES
+    # This is done to make sure that we always take the same hosts
+    # in test and train data, but it is possible that some hosts
+    # will be missing in test data if they are not in the first TAKE_NODES
+    # Therefore at the end of the script there is a sparate check to make sure
+    # that all hosts from train data are also in test data (and vice versa)
     hosts_to_take.sort()
-    
     hosts = hosts_to_take[:TAKE_NODES]
     logging.info(f'Hosts to process {hosts}')
     
-    for type in ['train', 'test']:
+    # generate test and train data
+    for type in ['test', 'train']:
         
-        df = raw_df.copy()
+        df = raw_df.copy(deep=True)
         
-        if type == 'test':
-            df = remove_data_between_dates(df, '2000-01-01 00:00:00', '2023-02-03') # Remove data before 2023-01-03
-            df = remove_data_between_dates(df, '2023-02-13 00:00:00', '2030-05-10') # Remove data after 2023-02-13
-            df = df.reset_index(drop=True)
-            
-            date_range_start = '2023-02-03'
-            date_range_end = '2023-02-13'
-              
-        elif type == 'train':
-            df = remove_data_between_dates(df, '2000-01-01 00:00:00', '2023-01-05 12:50:00')  # Remove data before 2023-01-05 12:50:00
-            df = remove_data_between_dates(df, '2023-02-01', '2023-02-02') 
-            df = remove_data_between_dates(df, '2023-02-04', '2023-02-10') # big anomaly time
-            df = remove_data_between_dates(df, '2023-02-13 00:00:00', '2030-05-10') # Remove data after 2023-02-13
-            
-            date_range_start = '2023-01-05 12:50:00'
-            date_range_end = '2023-01-31 23:59:59'
+        # Load config for train/test data
+        date_range_start, date_range_end = config['PREPROCESSING'][f'{type}_date_range'].split(',')
+        
+        # Remove data before start date and after end date
+        df = remove_data_between_dates(df, '2000-01-01', date_range_start) 
+        df = remove_data_between_dates(df, date_range_end, '2050-01-01') 
+        df = df.reset_index(drop=True)
+        
+        # Remove blacklisted date ranges
+        blacklisted_ranges = config['PREPROCESSING'][f'{type}_remove_periods'].split('&')
+        if blacklisted_ranges[0] != '':
+            for range in blacklisted_ranges:
+                start, end = range.split(',')
+                df = remove_data_between_dates(df, start, end)     
+                df = df.reset_index(drop=True)    
 
         logger.debug(f'After removing data {df.shape}')
 
+        # Get/filter data for hosts only
         df = get_data_for_hosts(df, hosts)
 
         logger.info(f'After getting data for hosts {df.shape}')
         logger.info(f'Considered date range {df["date"].min()} - {df["date"].max()}')
 
+        
         for host in tqdm(hosts, desc='Filling missing data'):
             logger.debug(f'Filling missing data for {host}')
-            _df_host = fill_missing_data(df[df['hostname'] == host].copy(), date_range_start, date_range_end, host)
+            # Fill missing data for each host
+            _df_host = fill_missing_data(df[df['hostname'] == host], date_range_start, date_range_end, host)
+            # Save each host data to a separate file named after the host
             save_data(_df_host, f'{host}', os.path.join(save_data_dir, type), keep_columns=important_cols)
             
     
