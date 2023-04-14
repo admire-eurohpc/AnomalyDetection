@@ -117,6 +117,9 @@ if __name__ == "__main__":
         'encoder_layers': ENCODER_LAYERS,
         'decoder_layers': DECODER_LAYERS,
         'latent_dim': LATENT_DIM,
+        'number_of_nodes': height,
+        'number_of_channels': channels,
+        'seed': SEED,
     })
 
     # BUILD ENCODER
