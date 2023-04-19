@@ -13,7 +13,7 @@ import configparser
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
 from utils.plotting import *
-LOGS_PATH = 'lightning_logs/ae/2023_04_14-21_25_33'
+LOGS_PATH = 'lightning_logs/ae/2023_04_18-08_27_00'
 path = os.path.join(os.getcwd(), LOGS_PATH, 'checkpoints')
 
 config = configparser.ConfigParser()
@@ -116,6 +116,7 @@ logging.debug(f'Test len: {len(test_dataloader)}, Dates len: {len(test_date_rang
 
 test_reconstruction_mean_absolute_error = []
 for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error evaluation", total=len(test_dataloader)):
+    print(idx)
     err = torch.sum(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))).detach().numpy()
     test_reconstruction_mean_absolute_error.append(err)
 

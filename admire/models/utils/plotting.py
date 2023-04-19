@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, Union
 import numpy.typing as npt
 import plotly.express as px
 import plotly.io as pio
@@ -71,7 +71,7 @@ def plot_embeddings_vs_real(_embeddings: npt.NDArray,
             
             
 def plot_reconstruction_error_over_time(reconstruction_errors: List[float],
-                                        time_axis: List[int] | List[Any] | None = None,
+                                        time_axis: Union[List[int], List[Any], None] = None,
                                         show: bool = False,
                                         write: bool = False,
                                         savedir: bool = 'images'
