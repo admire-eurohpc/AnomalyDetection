@@ -51,7 +51,7 @@ TEST_SLIDE = config.getint('TRAINING', 'TEST_SLIDE')
 ENCODER_LAYERS = np.array([int(x) for x in config.get('TRAINING', 'ENCODER_LAYERS').split(',')])
 DECODER_LAYERS = np.array([int(x) for x in config.get('TRAINING', 'DECODER_LAYERS').split(',')])
 LATENT_DIM = config.getint('TRAINING', 'LATENT_DIM')
-
+LR = config.getfloat('TRAINING', 'LEARNING_RATE')
 SHUFFLE = config.getboolean('TRAINING', 'SHUFFLE')
 VAL_SHUFFLE = config.getboolean('TRAINING', 'VAL_SHUFFLE')
 
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     logging.debug(f'Decoder Summary: {decoder}')
 
     # Init the lightning autoencoder
-    autoencoder = LitAutoEncoder(input_shape, LATENT_DIM, encoder, decoder, lr=1e-4)
+    autoencoder = LitAutoEncoder(input_shape, LATENT_DIM, encoder, decoder)
     
     # Add early stopping
     early_stop_callback = pl.callbacks.EarlyStopping(
@@ -163,6 +163,7 @@ if __name__ == "__main__":
         monitor="val_loss", 
         mode="min"
     )
+    lr_callback = pl.callbacks.LearningRateMonitor(logging_interval = 'epoch')
 
 
     logging.debug(f'Autoencoder Summary: {autoencoder}')
@@ -171,10 +172,11 @@ if __name__ == "__main__":
         logger=logger,
         callbacks=[
             early_stop_callback,
-            checkpoint_callback
+            checkpoint_callback,
+            lr_callback,
             ],   
         enable_checkpointing=config.getboolean('TRAINING', 'ENABLE_CHECKPOINTING'),
-        # accelerator="gpu", devices=1, strategy="auto",
+        #accelerator="gpu", devices=1, strategy="auto",
         )
     trainer.fit(
         model=autoencoder, 

@@ -13,7 +13,7 @@ class LitAutoEncoder(pl.LightningModule):
                  latent_dim: int,
                  encoder: nn.Module,
                  decoder: nn.Module,
-                 lr: int = 1e-3,
+                 lr: int = 1e-4,
                  ):
         super().__init__()
         self.encoder = encoder
@@ -43,7 +43,11 @@ class LitAutoEncoder(pl.LightningModule):
     
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.lr)
-        return optimizer
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
+        return {'optimizer': optimizer,
+                'lr_scheduler': scheduler,
+                'monitor': 'val_loss',
+                }
     
     def training_step(self, batch, batch_idx):
         x = batch

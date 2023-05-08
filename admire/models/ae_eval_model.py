@@ -13,7 +13,7 @@ import configparser
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
 from utils.plotting import *
-LOGS_PATH = 'lightning_logs/ae/2023_04_18-08_27_00'
+LOGS_PATH = 'lightning_logs/ae/2023_04_27-12_22_43'
 path = os.path.join(os.getcwd(), LOGS_PATH, 'checkpoints')
 
 config = configparser.ConfigParser()
@@ -133,12 +133,24 @@ ax.set_title('Reconstruction error (test data)\nDate on x-axis corresponds to th
 plt.xticks(rotation=70)
 plt.tight_layout()
 
-savedir = os.path.join(os.getcwd(), 'images', 'reconstruction')
+all_folders = os.listdir('images/reconstruction/')
+all_folders.sort()
+if len(all_folders)==0:
+    print('no folders found')
+    name = 'RUN'+'1'
+else:
+    latest = all_folders[-1].replace('RUN', '')
+    new = int(latest) + 1
+    name = 'RUN'+str(new)
+os.makedirs('images/reconstruction/'+name)
+
+savedir = os.path.join(os.getcwd(), 'images', 'reconstruction', name)
 if not os.path.exists(savedir):
     os.makedirs(savedir)
 
-plt.savefig(os.path.join(savedir, 'plt_reconstruction.png'))
-
+plt.savefig(os.path.join(savedir, 'march_plt_reconstruction.png'))
+with open(os.path.join(savedir, 'config.ini'), 'w') as configfile:
+  config.write(configfile)
 print('Plotly')
 
 plot_reconstruction_error_over_time(test_reconstruction_mean_absolute_error, 
