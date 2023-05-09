@@ -140,6 +140,16 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
 
     return _df
 
+def host_sort(df, hosts):
+    res = {}
+    for host in hosts:
+        logger.debug(f'Estimating {host} length')
+        #print(host, len(df[df['hostname'] == host]))
+        res[host] = len(df[df['hostname'] == host])
+
+    sorted_res = dict(sorted(res.items(), key=lambda item: item[1], reverse=True))
+    return list(sorted_res.keys())[:TAKE_NODES]
+
 if __name__ == '__main__':
     
     raw_data_dir = config['PREPROCESSING']['raw_data_dir']
@@ -167,8 +177,6 @@ if __name__ == '__main__':
     # Therefore at the end of the script there is a sparate check to make sure
     # that all hosts from train data are also in test data (and vice versa)
     hosts_to_take.sort()
-    hosts = hosts_to_take[:TAKE_NODES]
-    logging.info(f'Hosts to process {hosts}')
     
     # generate test and train data
     for type in ['test', 'train']:
@@ -193,6 +201,9 @@ if __name__ == '__main__':
 
         logger.debug(f'After removing data {df.shape}')
 
+        hosts = host_sort(df, hosts_to_take)
+        logging.info(f'Hosts to process {hosts}')
+
         # Get/filter data for hosts only
         df = get_data_for_hosts(df, hosts)
 
@@ -216,8 +227,8 @@ if __name__ == '__main__':
     if set(train_host_names) != set(test_host_names):
         for diff in set(train_host_names) - set(test_host_names):
             logger.error(f'{diff} is in train but not in test. Removing it')
-            os.remove(os.path.join(save_data_dir, 'train', diff))
+            #os.remove(os.path.join(save_data_dir, 'train', diff))
         for diff in set(test_host_names) - set(train_host_names):
             logger.error(f'{diff} is in test but not in train. Removing it')
-            os.remove(os.path.join(save_data_dir, 'test', diff))
+            #os.remove(os.path.join(save_data_dir, 'test', diff))
             
