@@ -144,7 +144,6 @@ def host_sort(df, hosts):
     res = {}
     for host in hosts:
         logger.debug(f'Estimating {host} length')
-        #print(host, len(df[df['hostname'] == host]))
         res[host] = len(df[df['hostname'] == host])
 
     sorted_res = dict(sorted(res.items(), key=lambda item: item[1], reverse=True))
