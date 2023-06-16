@@ -101,8 +101,8 @@ def remove_data_between_dates(df: pd.DataFrame, start: str, end: str) -> pd.Data
     data up to 2020-01-01 23:59:59 and after 2020-01-05 00:00:00
 
     """
-    start = pd.to_datetime(start, format=r'%Y-%m-%d %H:%M:%S', utc=True)
-    end = pd.to_datetime(end, format=r'%Y-%m-%d %H:%M:%S', utc=True)
+    start = pd.to_datetime(start, format=r'%Y-%m-%d', utc=True)
+    end = pd.to_datetime(end, format=r'%Y-%m-%d', utc=True)
     df_time = pd.to_datetime(df['date'], utc=True)
     return df[~((df_time >= start) & (df_time < end))]
 
@@ -134,16 +134,18 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
 
     # Fill missing values with **fill_value** which is 0 by default
     _df['hostname'] = host
-    _df['power'] = _df['power'].fillna(fill_value)
-    _df['cpu1'] = _df['cpu1'].fillna(fill_value)
-    _df['cpu2'] = _df['cpu2'].fillna(fill_value)
+    _df['power'] = _df['power'].fillna(140)
+    _df['cpu1'] = _df['cpu1'].fillna(29)
+    _df['cpu2'] = _df['cpu2'].fillna(29)
+    if include_cpu_alloc:
+        _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
 
     return _df
 
 def host_sort(df, hosts):
     res = {}
-    for host in hosts:
-        logger.debug(f'Estimating {host} length')
+    logger.debug('Estimating hosts length')
+    for host in tqdm(hosts):
         res[host] = len(df[df['hostname'] == host])
 
     sorted_res = dict(sorted(res.items(), key=lambda item: item[1], reverse=True))
@@ -156,9 +158,12 @@ if __name__ == '__main__':
     save_data_dir = config['PREPROCESSING']['processed_data_dir']
     hosts_blacklist = config['PREPROCESSING']['hosts_blacklist'].split(',')
     TAKE_NODES = int(config['PREPROCESSING']['nodes_count_to_process'])
+    include_cpu_alloc = bool(config['PREPROCESSING']['with_cpu_alloc'])
     
     important_cols = ['date', 'hostname', 'power', 'cpu1', 'cpu2']
-    
+    if include_cpu_alloc:
+        important_cols.append('cpus_alloc')
+
     raw_df = read_data(raw_data_dir, important_cols)
     logger.debug(f'Loaded data shape {raw_df.shape}')
     

@@ -43,7 +43,7 @@ class LitAutoEncoder(pl.LightningModule):
     
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
         return {'optimizer': optimizer,
                 'lr_scheduler': scheduler,
                 'monitor': 'val_loss',

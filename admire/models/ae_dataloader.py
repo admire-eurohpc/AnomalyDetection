@@ -9,10 +9,13 @@ from torch.utils.data import Dataset
 import logging
 import tqdm
 import matplotlib.pyplot as plt
+import configparser
 
 from utils.transformations import Transform
 
 logger = logging.getLogger(__name__)
+config = configparser.ConfigParser()
+config.read('config.ini')
 
 class TimeSeriesDataset(Dataset):
     '''Dataset generator class for time series data'''
@@ -40,6 +43,7 @@ class TimeSeriesDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.normalize = normalize
+        self.include_cpu_alloc = bool(config['PREPROCESSING']['with_cpu_alloc'])
         
         # Get all filenames in data_dir
         _, _, filenames = os.walk(data_dir).__next__()
@@ -60,13 +64,16 @@ class TimeSeriesDataset(Dataset):
         # Desired shape will be (n_features x n_nodes x n_time_steps )
         # e.g. (3 features x 100 nodes x 1000 time ticks )
         for filename in tqdm.tqdm(filenames, desc="Loading ts data"):
+            columns = ['power', 'cpu1', 'cpu2']
+            if self.include_cpu_alloc:
+                columns.append('cpus_alloc')
             _data = pd.read_parquet(
                         os.path.join(data_dir, filename), 
-                        columns=['power', 'cpu1', 'cpu2']
+                        columns=columns
                         ) \
-                    .to_numpy().T.reshape(3, 1, -1) 
+                    .to_numpy().T.reshape(len(columns), 1, -1) 
                     
-            logger.debug(f'Loaded data shape: {_data.shape}')
+            #logger.debug(f'Loaded data shape: {_data.shape}')
                     
             if self.time_series is None:
                 self.time_series = _data

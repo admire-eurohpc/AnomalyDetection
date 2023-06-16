@@ -67,6 +67,7 @@ if __name__ == "__main__":
     train_set, val_set = torch.utils.data.random_split(dataset, [0.8, 0.2])
 
     use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda:0' if use_cuda else 'cpu')
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
     
     train_loader = DataLoader(
@@ -176,7 +177,7 @@ if __name__ == "__main__":
             lr_callback,
             ],   
         enable_checkpointing=config.getboolean('TRAINING', 'ENABLE_CHECKPOINTING'),
-        #accelerator="gpu", devices=1, strategy="auto",
+        accelerator="gpu", devices=1, strategy="auto",
         )
     trainer.fit(
         model=autoencoder, 
@@ -191,13 +192,12 @@ if __name__ == "__main__":
                                 encoder=encoder, 
                                 decoder=decoder,
                                 input_shape=input_shape,
-                                latent_dim=LATENT_DIM
+                                latent_dim=LATENT_DIM,
+                                map_location="cuda:0"
                                 )
-    
-    # ----- TEST ----- #
-    
-    # Now test the model on february data
-    # Run the model on the entire test set and report reconstruction error to tensorboard
+    # # ----- TEST ----- #
+    # # Now test the model on february data
+    # # Run the model on the entire test set and report reconstruction error to tensorboard
     autoencoder.eval()
     autoencoder.freeze()
     
@@ -206,16 +206,17 @@ if __name__ == "__main__":
     test_reconstruction_mean_absolute_error = []
     # Run evaluation on test set
     for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=len(test_dataloader)):
-        print(batch)
-        err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))).detach().numpy()
-        logger.experiment.add_scalar("test_reconstruction_error", err, idx)
-        test_reconstruction_mean_absolute_error.append(err)
+        batch = batch.to(device)
+        err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch))))
+        err_detached = err.cpu().numpy()
+        logger.experiment.add_scalar("test_reconstruction_error", err_detached, idx)
+        test_reconstruction_mean_absolute_error.append(err_detached)
     
 
     # Plot reconstruction error over time
     dates_range = test_dataset.get_dates_range()
     logging.debug(f'Date range: {dates_range["end"]} - {dates_range["start"]}')
-    dates_range = pd.date_range(start=dates_range["start"], end=dates_range["end"], freq='1min', tz='Europe/Warsaw')
+    dates_range = pd.date_range(start=dates_range["start"], end=dates_range["end"], freq='1min', tz='UTC')
     dates_range = dates_range.to_numpy()[:len(test_reconstruction_mean_absolute_error)] # Fit dates range to actual data (bear in mind that last date is max - WINDOW_SIZE)
     logging.debug(f"Plotting reconstruction error over time")
     plot_reconstruction_error_over_time(
@@ -241,8 +242,9 @@ if __name__ == "__main__":
     logging.debug(f"Plotting reconstructions vs real")
     sample = test_dataset.get_time_series()
     sample = torch.Tensor(sample[:, :, 0:WINDOW_SIZE].flatten())
-    reconstructions = autoencoder.decoder(autoencoder.encoder(sample)).detach().numpy()
-    sample = sample.detach().numpy()
+    sample = sample.to(device)
+    reconstructions = autoencoder.decoder(autoencoder.encoder(sample)).cpu().numpy()
+    sample = sample.cpu().numpy()
     plot_embeddings_vs_real(
         _embeddings=reconstructions,
         _real=sample,
