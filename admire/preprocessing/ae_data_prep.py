@@ -40,9 +40,9 @@ def read_data(raw_data_dir: str = 'data/raw', important_cols: List[str] = None) 
         _df['date']  = pd.to_datetime(_df['date'])
         
         if _df['date'].dt.tz is None:
-            _df['date'] = _df['date'].dt.tz_localize('UTC')
+            _df['date'] = _df['date'].dt.tz_localize('Europe/Warsaw')
         else:
-            _df['date'] = _df['date'].dt.tz_convert('UTC')
+            _df['date'] = _df['date'].dt.tz_convert('Europe/Warsaw')
         
         _df['date'] = _df['date'].dt.round('min')
         
@@ -101,11 +101,10 @@ def remove_data_between_dates(df: pd.DataFrame, start: str, end: str) -> pd.Data
     data up to 2020-01-01 23:59:59 and after 2020-01-05 00:00:00
 
     """
-    print(start, end)
-    start = pd.to_datetime(start, format=r'%Y-%m-%d', utc=True)
-    end = pd.to_datetime(end, format=r'%Y-%m-%d', utc=True)
-    df_time = pd.to_datetime(df['date'], utc=True)
-    return df[~((df_time >= start) & (df_time < end))]
+    start = pd.to_datetime(start, format=r'%Y-%m-%d', utc=False).tz_localize('Europe/Warsaw')
+    end = pd.to_datetime(end, format=r'%Y-%m-%d', utc=False).tz_localize('Europe/Warsaw')
+    df['date'] = pd.to_datetime(df['date'])
+    return df.loc[(df['date'] >= start) & (df['date'] < end)]
 
 def get_data_for_hosts(df: pd.DataFrame, hosts: List[str]) -> pd.DataFrame:
     """Returns/filters datafram for specified hosts only. Hosts should be a list of strings."""
@@ -115,12 +114,12 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
     """Fill places where there is no measurements for a host between two dates (inclusive)"""
     _df = pd.DataFrame()
     # Create a dataframe with all dates between start and end in UTC+1 timezone
-    _df['date'] = pd.date_range(start=date_start, end=date_end, freq='1min', tz='UTC')
+    _df['date'] = pd.date_range(start=date_start, end=date_end, freq='1min', tz='Europe/Warsaw')
 
     # convert the 'date' column to datetime format
     origianl_df = origianl_df.copy().drop_duplicates(subset="date")
-    origianl_df['date'] = pd.to_datetime(origianl_df['date'], utc=True).astype(np.int64)
-    _df['date'] = pd.to_datetime(_df['date'], utc=True).astype(np.int64)
+    origianl_df['date'] = pd.to_datetime(origianl_df['date'], utc=False).astype(np.int64)
+    _df['date'] = pd.to_datetime(_df['date'], utc=False).astype(np.int64)
 
     shape_before_merge = _df.shape
 

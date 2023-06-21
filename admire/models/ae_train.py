@@ -220,7 +220,7 @@ if __name__ == "__main__":
     # Plot reconstruction error over time
     dates_range = test_dataset.get_dates_range()
     logging.debug(f'Date range: {dates_range["end"]} - {dates_range["start"]}')
-    dates_range = pd.date_range(start=dates_range["start"], end=dates_range["end"], freq='1min', tz='Europe/Warsaw') #shift of 3 hours
+    dates_range = pd.date_range(start=dates_range["start"], end=dates_range["end"], freq='1min', tz='Europe/Warsaw') #shift of 2 hours
     dates_range = dates_range.to_numpy()[:len(test_reconstruction_mean_absolute_error)] # Fit dates range to actual data (bear in mind that last date is max - WINDOW_SIZE)
     logging.debug(f"Plotting reconstruction error over time")
     plot_reconstruction_error_over_time(

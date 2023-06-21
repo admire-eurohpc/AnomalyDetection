@@ -44,7 +44,6 @@ class TimeSeriesDataset(Dataset):
         self.target_transform = target_transform
         self.normalize = normalize
         self.include_cpu_alloc = config.getboolean('PREPROCESSING','with_cpu_alloc')
-        print(self.include_cpu_alloc)
         
         # Get all filenames in data_dir
         _, _, filenames = os.walk(data_dir).__next__()
@@ -67,7 +66,6 @@ class TimeSeriesDataset(Dataset):
         for filename in tqdm.tqdm(filenames, desc="Loading ts data"):
             columns = ['power', 'cpu1', 'cpu2']
             if self.include_cpu_alloc:
-                print("withcpu")
                 columns.append('cpus_alloc')
             _data = pd.read_parquet(
                         os.path.join(data_dir, filename), 
@@ -140,8 +138,6 @@ if __name__ == '__main__':
 
     dataset = TimeSeriesDataset(data_dir="data/processed/febtop200_withoutalloc/train", normalize=True)
     d = next(iter(dataset))
-    sample = dataset.get_time_series()
-    print(np.shape(sample))
     print(d.shape)
     print(d)
     
