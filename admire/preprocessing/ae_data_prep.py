@@ -101,6 +101,7 @@ def remove_data_between_dates(df: pd.DataFrame, start: str, end: str) -> pd.Data
     data up to 2020-01-01 23:59:59 and after 2020-01-05 00:00:00
 
     """
+    print(start, end)
     start = pd.to_datetime(start, format=r'%Y-%m-%d', utc=True)
     end = pd.to_datetime(end, format=r'%Y-%m-%d', utc=True)
     df_time = pd.to_datetime(df['date'], utc=True)
@@ -146,7 +147,7 @@ def host_sort(df, hosts):
     res = {}
     logger.debug('Estimating hosts length')
     for host in tqdm(hosts):
-        res[host] = len(df[df['hostname'] == host])
+        res[host] = len(df.index[df['hostname'] == host])
 
     sorted_res = dict(sorted(res.items(), key=lambda item: item[1], reverse=True))
     return list(sorted_res.keys())[:TAKE_NODES]
@@ -183,7 +184,7 @@ if __name__ == '__main__':
     hosts_to_take.sort()
     
     # generate test and train data
-    for type in ['test', 'train']:
+    for type in ['train', 'test']:
         
         df = raw_df.copy(deep=True)
         

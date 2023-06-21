@@ -33,3 +33,80 @@ class Encoder(nn.Module):
     def forward(self, x):
         logging.debug(f'Encoder inference shape: {x.shape}')
         return self.net(x)
+    
+class CNN_encoder(nn.Module):
+    def __init__(self, kernel_size: int, latent_dim: int, cpu_alloc: bool):
+        """
+        Args:
+           num_input_channels : Number of input channels 3 without cpus_alloc, 4 with this feature
+           base_channel_size : Number of channels we use in the first convolutional layers. Deeper layers might use a duplicate of it.
+           latent_dim : Dimensionality of latent representation z
+           act_fn : Activation function used throughout the encoder network
+        """
+        super().__init__()
+        #assuming window size of 60
+        if cpu_alloc:
+            kernel_size2d = (4, kernel_size)
+            maxpool_size2d = (4,3)
+        else:
+            kernel_size2d = (3, kernel_size)
+            maxpool_size2d = 3
+        
+        modules = []
+        channels = [200, 400, 800]
+        modules.append(nn.Conv2d(channels[0], channels[0], kernel_size=kernel_size2d, padding='same')) #input = (200x3x60), output = (200, 3, 60)
+        modules.append(nn.ReLU())
+        modules.append(nn.Conv2d(channels[0], channels[1], kernel_size=kernel_size2d, padding='same')) #input = (200x3x60), output = (400, 3, 60)
+        modules.append(nn.ReLU())
+        modules.append(nn.MaxPool2d(kernel_size=(maxpool_size2d))) #input = (400x3x60), output = (400, 1, 20)
+        modules.append(nn.Flatten(start_dim=2))
+        modules.append(nn.Conv1d(channels[1], channels[2], kernel_size=kernel_size, padding='same'))
+        modules.append(nn.ReLU())
+        modules.append(nn.MaxPool1d(4))
+        modules.append(nn.Flatten())
+        modules.append(nn.Linear(latent_dim*100, latent_dim)) #latent dim of 12-6 preferably
+
+        self.model = nn.Sequential(*modules)
+
+    def forward(self, x):
+        #logging.debug(f'Encoder inference shape: {x.shape}')
+        return self.model(x)
+
+
+class CNN_encoder_one_node(nn.Module):
+    def __init__(self, kernel_size: int, latent_dim: int = 4, cpu_alloc: bool = False):
+        """
+        Args:
+           num_input_channels : Number of input channels 3 without cpus_alloc, 4 with this feature
+           base_channel_size : Number of channels we use in the first convolutional layers. Deeper layers might use a duplicate of it.
+           latent_dim : Dimensionality of latent representation z
+           act_fn : Activation function used throughout the encoder network
+        """
+        super().__init__()
+        #assuming window size of 60
+        if cpu_alloc:
+            kernel_size2d = (4, kernel_size)
+            maxpool_size2d = (4,3)
+        else:
+            kernel_size2d = (3, kernel_size)
+            maxpool_size2d = 3
+        
+        modules = []
+        channels = [1, 8, 32]
+        modules.append(nn.Conv2d(channels[0], channels[0], kernel_size=kernel_size2d, padding='same')) #input = (200x3x60), output = (200, 3, 60)
+        modules.append(nn.ReLU())
+        modules.append(nn.Conv2d(channels[0], channels[1], kernel_size=kernel_size2d, padding='same')) #input = (200x3x60), output = (400, 3, 60)
+        modules.append(nn.ReLU())
+        modules.append(nn.MaxPool2d(kernel_size=(maxpool_size2d))) #input = (400x3x60), output = (400, 1, 20)
+        modules.append(nn.Flatten(start_dim=2))
+        modules.append(nn.Conv1d(channels[1], channels[2], kernel_size=kernel_size, padding='same'))
+        modules.append(nn.ReLU())
+        modules.append(nn.MaxPool1d(4))
+        modules.append(nn.Flatten())
+        modules.append(nn.Linear(latent_dim*40, latent_dim)) # latent dim 4
+
+        self.model = nn.Sequential(*modules)
+
+    def forward(self, x):
+        #logging.debug(f'Encoder inference shape: {x.shape}')
+        return self.model(x)

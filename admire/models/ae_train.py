@@ -10,14 +10,15 @@ import configparser
 import torch
 from torch.utils.data import DataLoader
 from torch import optim, nn, utils, Tensor
+from torchsummary import summary
 import lightning as L
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import TensorBoardLogger
 import tqdm
 
 # -- Own modules --
-from ae_encoder import Encoder
-from ae_decoder import Decoder
+from ae_encoder import CNN_encoder
+from ae_decoder import CNN_decoder
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
 from utils.plotting import plot_embeddings_vs_real, plot_reconstruction_error_over_time
@@ -27,12 +28,12 @@ logging.basicConfig(level=logging.DEBUG)
 config = configparser.ConfigParser()
 config.read('config.ini')
 
-image_save_path = os.path.join('images', 'training')
-if not os.path.exists(image_save_path):
-    os.makedirs(image_save_path)
-
 _tmp_name = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
 logger = TensorBoardLogger(save_dir="lightning_logs", name="ae", version=f'{_tmp_name}')
+
+image_save_path = os.path.join('lightning_logs', 'ae', f'{_tmp_name}')
+if not os.path.exists(image_save_path):
+    os.makedirs(image_save_path)
 
 SEED = config.getint('TRAINING', 'SEED')
 # Setting the seed
@@ -56,6 +57,7 @@ SHUFFLE = config.getboolean('TRAINING', 'SHUFFLE')
 VAL_SHUFFLE = config.getboolean('TRAINING', 'VAL_SHUFFLE')
 
 PROCESSED_DATA_DIR = config.get('PREPROCESSING', 'processed_data_dir')
+INCLUDE_CPU_ALLOC = config.getboolean('PREPROCESSING', 'with_cpu_alloc')
 
 if __name__ == "__main__":
     
@@ -148,7 +150,9 @@ if __name__ == "__main__":
     logging.debug(f'Decoder Summary: {decoder}')
 
     # Init the lightning autoencoder
-    autoencoder = LitAutoEncoder(input_shape, LATENT_DIM, encoder, decoder)
+    cnn_encoder = CNN_encoder(kernel_size=10, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
+    cnn_decoder = CNN_decoder(latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
+    autoencoder = LitAutoEncoder(input_shape, LATENT_DIM, cnn_encoder, cnn_decoder)
     
     # Add early stopping
     early_stop_callback = pl.callbacks.EarlyStopping(
@@ -189,8 +193,8 @@ if __name__ == "__main__":
     
     autoencoder = LitAutoEncoder.load_from_checkpoint(
                                 checkpoint_path=checkpoint_callback.best_model_path,
-                                encoder=encoder, 
-                                decoder=decoder,
+                                encoder=cnn_encoder, 
+                                decoder=cnn_decoder,
                                 input_shape=input_shape,
                                 latent_dim=LATENT_DIM,
                                 map_location="cuda:0"
@@ -216,7 +220,7 @@ if __name__ == "__main__":
     # Plot reconstruction error over time
     dates_range = test_dataset.get_dates_range()
     logging.debug(f'Date range: {dates_range["end"]} - {dates_range["start"]}')
-    dates_range = pd.date_range(start=dates_range["start"], end=dates_range["end"], freq='1min', tz='UTC')
+    dates_range = pd.date_range(start=dates_range["start"], end=dates_range["end"], freq='1min', tz='Europe/Warsaw') #shift of 3 hours
     dates_range = dates_range.to_numpy()[:len(test_reconstruction_mean_absolute_error)] # Fit dates range to actual data (bear in mind that last date is max - WINDOW_SIZE)
     logging.debug(f"Plotting reconstruction error over time")
     plot_reconstruction_error_over_time(
@@ -239,23 +243,23 @@ if __name__ == "__main__":
 
 
     # Plot some reconstructions vs real examples
-    logging.debug(f"Plotting reconstructions vs real")
-    sample = test_dataset.get_time_series()
-    sample = torch.Tensor(sample[:, :, 0:WINDOW_SIZE].flatten())
-    sample = sample.to(device)
-    reconstructions = autoencoder.decoder(autoencoder.encoder(sample)).cpu().numpy()
-    sample = sample.cpu().numpy()
-    plot_embeddings_vs_real(
-        _embeddings=reconstructions,
-        _real=sample,
-        channels=channels,
-        height=height,
-        width=width,
-        checkpoint=checkpoint_callback.best_model_path,
-        image_save_path=image_save_path,
-        write=True,
-        show=False,
-    )
+    # logging.debug(f"Plotting reconstructions vs real")
+    # sample = test_dataset.get_time_series()
+    # sample = torch.Tensor(sample[:, :, 0:WINDOW_SIZE].flatten())
+    # sample = sample.to(device)
+    # reconstructions = autoencoder.decoder(autoencoder.encoder(sample)).cpu().numpy()
+    # sample = sample.cpu().numpy()
+    # plot_embeddings_vs_real(
+    #     _embeddings=reconstructions,
+    #     _real=sample,
+    #     channels=channels,
+    #     height=height,
+    #     width=width,
+    #     checkpoint=checkpoint_callback.best_model_path,
+    #     image_save_path=image_save_path,
+    #     write=True,
+    #     show=False,
+    # )
 
 
     logging.debug(f"Finished")

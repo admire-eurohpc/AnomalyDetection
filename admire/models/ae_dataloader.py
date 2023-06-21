@@ -23,8 +23,8 @@ class TimeSeriesDataset(Dataset):
                  transform=None, 
                  target_transform=None, 
                  normalize: bool = True,
-                 window_size: int = 20,
-                 slide_length: int = 10,
+                 window_size: int = 80,
+                 slide_length: int = 40,
                  external_transform: Transform = None
                  ) -> None:
         '''
@@ -43,7 +43,8 @@ class TimeSeriesDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.normalize = normalize
-        self.include_cpu_alloc = bool(config['PREPROCESSING']['with_cpu_alloc'])
+        self.include_cpu_alloc = config.getboolean('PREPROCESSING','with_cpu_alloc')
+        print(self.include_cpu_alloc)
         
         # Get all filenames in data_dir
         _, _, filenames = os.walk(data_dir).__next__()
@@ -66,6 +67,7 @@ class TimeSeriesDataset(Dataset):
         for filename in tqdm.tqdm(filenames, desc="Loading ts data"):
             columns = ['power', 'cpu1', 'cpu2']
             if self.include_cpu_alloc:
+                print("withcpu")
                 columns.append('cpus_alloc')
             _data = pd.read_parquet(
                         os.path.join(data_dir, filename), 
@@ -94,6 +96,7 @@ class TimeSeriesDataset(Dataset):
                 
         # It is important to convert to float32, otherwise pytorch will complain
         self.time_series = self.time_series.astype(np.float32)
+        self.time_series = np.reshape(self.time_series, (self.time_series.shape[1], self.time_series.shape[0], self.time_series.shape[2]))
         
         logger.debug(f"Time series shape: {self.time_series.shape}")
 
@@ -107,7 +110,7 @@ class TimeSeriesDataset(Dataset):
     def __getitem__(self, idx): 
         start = idx * self.slide_length # Each window starts at a multiple of the slide length
         ts = self.time_series[:, :, start:start+self.window_size] # Get the window
-        return torch.Tensor(ts.flatten())
+        return torch.Tensor(ts)
     
     def get_time_series(self):
         '''Returns the time series. If normalized, returns the denormalized time series'''
@@ -135,9 +138,10 @@ class TimeSeriesDataset(Dataset):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
 
-    dataset = TimeSeriesDataset(data_dir="data/processed/", normalize=True)
-
+    dataset = TimeSeriesDataset(data_dir="data/processed/febtop200_withoutalloc/train", normalize=True)
     d = next(iter(dataset))
+    sample = dataset.get_time_series()
+    print(np.shape(sample))
     print(d.shape)
     print(d)
     
