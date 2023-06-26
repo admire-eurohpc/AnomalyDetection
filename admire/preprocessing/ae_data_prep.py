@@ -103,8 +103,8 @@ def remove_data_between_dates(df: pd.DataFrame, start: str, end: str) -> pd.Data
     """
     start = pd.to_datetime(start, format=r'%Y-%m-%d', utc=False).tz_localize('Europe/Warsaw')
     end = pd.to_datetime(end, format=r'%Y-%m-%d', utc=False).tz_localize('Europe/Warsaw')
-    df['date'] = pd.to_datetime(df['date'])
-    return df.loc[(df['date'] >= start) & (df['date'] < end)]
+
+    return df.loc[~((df['date'] >= start) & (df['date'] < end))]
 
 def get_data_for_hosts(df: pd.DataFrame, hosts: List[str]) -> pd.DataFrame:
     """Returns/filters datafram for specified hosts only. Hosts should be a list of strings."""
@@ -194,7 +194,7 @@ if __name__ == '__main__':
         df = remove_data_between_dates(df, '2000-01-01', date_range_start) 
         df = remove_data_between_dates(df, date_range_end, '2050-01-01') 
         df = df.reset_index(drop=True)
-        
+
         # Remove blacklisted date ranges
         blacklisted_ranges = config['PREPROCESSING'][f'{type}_remove_periods'].split('&')
         if blacklisted_ranges[0] != '':
