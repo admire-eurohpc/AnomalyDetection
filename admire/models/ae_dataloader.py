@@ -38,6 +38,7 @@ class TimeSeriesDataset(Dataset):
         '''
 
         self.time_series: npt.NDarray = None
+        self.filenames = []
         self.window_size = window_size
         self.slide_length = slide_length
         self.transform = transform
@@ -78,8 +79,9 @@ class TimeSeriesDataset(Dataset):
             if self.time_series is None:
                 self.time_series = _data
             else:
-                self.time_series = np.concatenate((self.time_series, _data), axis=1)
-        
+                self.time_series = np.concatenate((self.time_series, _data), axis=2)
+
+            self.filenames.append(filename[0:5])
         logger.debug(f"Time series shape after concatenation: {self.time_series.shape}")
         
         if self.normalize and not external_transform:
@@ -103,7 +105,7 @@ class TimeSeriesDataset(Dataset):
         '''
         Returns the number of windows in the time series given the window size and slide length
         '''
-        return self.time_series.shape[2] // self.slide_length - self.window_size // self.slide_length # TODO: Check this thoroughly
+        return ((self.time_series.shape[2] - self.window_size)// self.slide_length) + 1 # TODO: Check this thoroughly
 
     def __getitem__(self, idx): 
         start = idx * self.slide_length # Each window starts at a multiple of the slide length
@@ -112,8 +114,8 @@ class TimeSeriesDataset(Dataset):
     
     def get_time_series(self):
         '''Returns the time series. If normalized, returns the denormalized time series'''
-        if self.normalize:
-            return self.transform.denormalize_time_series(self.time_series)
+        # if self.normalize:
+        #     return self.transform.denormalize_time_series(self.time_series)
         
         return self.time_series
     
@@ -127,6 +129,9 @@ class TimeSeriesDataset(Dataset):
     def get_transform(self):
         '''Returns the transform object used to normalize the data'''
         return self.transform
+    
+    def get_filenames(self):
+        return self.filenames
     
     def get_dates_range(self) -> Dict[str, datetime]:
         '''Returns the start and end dates of the time series'''

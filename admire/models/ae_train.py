@@ -21,7 +21,7 @@ from ae_encoder import CNN_encoder
 from ae_decoder import CNN_decoder
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
-from utils.plotting import plot_embeddings_vs_real, plot_reconstruction_error_over_time
+from utils.plotting import plot_embeddings_vs_real, plot_reconstruction_error_over_time, plot_recon_error_each_node, plot_recon_error_each_node_df
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -93,21 +93,18 @@ if __name__ == "__main__":
                                      external_transform=dataset.get_transform(), # Use same transform as for training
                                      window_size=WINDOW_SIZE, 
                                      slide_length=TEST_SLIDE)
-    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=True, **kwargs)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False, **kwargs)
     
     # Get input size and shapes
-    input_size = dataset.get_input_layer_size_flattened()
-    input_shape = dataset.get_input_layer_shape()
-    channels = input_shape[0]
-    height = input_shape[1]
-    width = input_shape[2]
-    
-    logging.debug(f"input_shape: {input_shape}")
-    logging.debug(f'channels: {channels}, height: {height}, width: {width}')
+    d = next(iter(test_dataloader))
+    input_shape = d.shape
+    channels = d.shape[0]
+    width = d.shape[1]
+    test_len = len(test_dataset)
+    logging.debug(f"test input_shape: {test_len}")
 
-    # TODO: Do it a bit more smart, for now the height means the number of nodes in data
-    ENCODER_LAYERS = ENCODER_LAYERS * height
-    DECODER_LAYERS = DECODER_LAYERS * height 
+    logging.debug(f"input_shape: {input_shape}")
+    logging.debug(f'channels: {channels}, width: {width}')
     
     # Log hyperparameters for tensorboard
     logger.log_hyperparams({
@@ -120,40 +117,15 @@ if __name__ == "__main__":
         'encoder_layers': ENCODER_LAYERS,
         'decoder_layers': DECODER_LAYERS,
         'latent_dim': LATENT_DIM,
-        'number_of_nodes': height,
         'number_of_channels': channels,
         'seed': SEED,
     })
-
-    # BUILD ENCODER
-    encoder = nn.Sequential()
-    encoder.append(nn.Linear(channels * width * height, ENCODER_LAYERS[0]))
-    encoder.append(nn.GELU())
-    
-    for i in range(1, len(ENCODER_LAYERS)):
-        encoder.append(nn.Linear(ENCODER_LAYERS[i-1], ENCODER_LAYERS[i]))
-        encoder.append(nn.GELU())
-        
-    encoder.append(nn.Linear(ENCODER_LAYERS[-1], LATENT_DIM))
-    logging.debug(f'Encoder Summary: {encoder}')
-    
-    # BUILD DECODER
-    decoder = nn.Sequential()
-    decoder.append(nn.Linear(LATENT_DIM, DECODER_LAYERS[0]))
-    decoder.append(nn.GELU())
-
-    for i in range(1, len(DECODER_LAYERS)):
-        decoder.append(nn.Linear(DECODER_LAYERS[i-1], DECODER_LAYERS[i]))
-        decoder.append(nn.GELU())
-        
-    decoder.append(nn.Linear(DECODER_LAYERS[-1], channels * width * height))
-    logging.debug(f'Decoder Summary: {decoder}')
 
     # Init the lightning autoencoder
     cnn_encoder = CNN_encoder(kernel_size=10, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
     cnn_decoder = CNN_decoder(latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
     autoencoder = LitAutoEncoder(input_shape, LATENT_DIM, cnn_encoder, cnn_decoder)
-    
+
     # Add early stopping
     early_stop_callback = pl.callbacks.EarlyStopping(
         monitor="val_loss", 
@@ -209,27 +181,32 @@ if __name__ == "__main__":
 
     test_reconstruction_mean_absolute_error = []
     # Run evaluation on test set
-    for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=len(test_dataloader)):
+    for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=test_len):
         batch = batch.to(device)
         err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch))))
         err_detached = err.cpu().numpy()
         logger.experiment.add_scalar("test_reconstruction_error", err_detached, idx)
         test_reconstruction_mean_absolute_error.append(err_detached)
     
-
+    cut = test_len%(200)
+    test_res = np.reshape(test_reconstruction_mean_absolute_error[0:-cut], (200, test_len//200))
+    test_res = test_res.tolist()
     # Plot reconstruction error over time
     dates_range = test_dataset.get_dates_range()
+    hostnames = test_dataset.get_filenames()
+    #df = pd.DataFrame(data={'ReconError': test_res, 'hostnames': hostnames})
     logging.debug(f'Date range: {dates_range["end"]} - {dates_range["start"]}')
     dates_range = pd.date_range(start=dates_range["start"], end=dates_range["end"], freq='1min', tz='Europe/Warsaw') #shift of 2 hours
     dates_range = dates_range.to_numpy()[:len(test_reconstruction_mean_absolute_error)] # Fit dates range to actual data (bear in mind that last date is max - WINDOW_SIZE)
     logging.debug(f"Plotting reconstruction error over time")
-    plot_reconstruction_error_over_time(
-        reconstruction_errors=test_reconstruction_mean_absolute_error,
-        time_axis=dates_range,
-        write=True,
-        show=False,
-        savedir=image_save_path
-    )
+    plot_recon_error_each_node(n_nodes = 200, time_axis = dates_range, data = test_res, hostnames = hostnames, savedir=image_save_path)
+    # plot_reconstruction_error_over_time(
+    #     reconstruction_errors=test_reconstruction_mean_absolute_error,
+    #     time_axis=dates_range,
+    #     write=True,
+    #     show=False,
+    #     savedir=image_save_path
+    # )
 
     # Matplotlib scatter
     fig, ax = plt.subplots(figsize=(10, 10))

@@ -5,6 +5,9 @@ import plotly.io as pio
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
+import numpy as np
+import pandas as pd
+import tqdm
 
 def plot_embeddings_vs_real(_embeddings: npt.NDArray, 
                             _real: npt.NDArray, 
@@ -102,3 +105,17 @@ def plot_reconstruction_error_over_time(reconstruction_errors: List[float],
     if write:
         fig.write_html(os.path.join(savedir, 'plotly_reconstruction.html'))
         fig.write_image(os.path.join(savedir, 'plotly_reconstruction.png'))
+
+def plot_recon_error_each_node(n_nodes: int, time_axis: Union[List[int], List[Any], None], data: list, hostnames: list, savedir: str = 'images'):
+    '''
+    n_clusters : how many cluster figures will plotly generate
+    model_labels : labels for different clusters in data
+    x : data
+    '''
+    fig = make_subplots(rows=1, cols=1)
+    
+    for i in tqdm.tqdm(range(n_nodes), desc="Plotting node ReconError"):
+        fig.append_trace(go.Scatter(x = time_axis, y = data[i], mode="lines", name=hostnames[i]), row=1, col=1)
+    fig.write_html(os.path.join(savedir, 'plotly_reconstruction.html'))
+    fig.write_image(os.path.join(savedir, 'plotly_reconstruction.png'))
+

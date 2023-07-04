@@ -211,8 +211,8 @@ if __name__ == '__main__':
         # Get/filter data for hosts only
         df = get_data_for_hosts(df, hosts)
 
-        logger.info(f'After getting data for hosts {df.shape}')
-        logger.info(f'Considered date range {df["date"].min()} - {df["date"].max()}')
+        logger.info(f'After getting data for hosts {type} set {df.shape}')
+        logger.info(f'Considered date range {df["date"].min()} - {df["date"].max()} for {type} set')
 
         
         for host in tqdm(hosts, desc='Filling missing data'):
