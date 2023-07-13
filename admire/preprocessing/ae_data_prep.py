@@ -5,6 +5,8 @@ import numpy as np
 import os
 import logging
 import configparser
+import random
+from itertools import cycle, compress
 from tqdm import tqdm
 
 logging.basicConfig(level=logging.DEBUG)
@@ -52,6 +54,27 @@ def read_data(raw_data_dir: str = 'data/raw', important_cols: List[str] = None) 
     logger.debug(f'DF info {df.info()}')
     return df.reset_index(drop=True)
 
+def augment_df(original_df: pd.DataFrame, column: str, augment_step: int, augment_len: int):
+    copy_df = original_df.copy()
+
+    temp = cycle([True] * augment_len + [False] * augment_step)
+    indices = list(compress(copy_df.index, temp))
+
+    match column:
+        case 'cpus_alloc':
+            vals = 48
+            copy_df.loc[indices, 'cpus_alloc'] = vals
+        case 'cpu1':
+            vals = random.randint(48, 51)
+            copy_df.loc[indices, 'cpu1'] = vals
+        case 'cpu2':
+            vals = random.randint(48, 51)
+            copy_df.loc[indices, 'cpu2'] = vals
+        case 'power':
+            vals = random.randint(430, 490)
+            copy_df.loc[indices, 'power'] = vals
+
+    return copy_df
 def save_data(df: pd.DataFrame, filename: str, data_dir: str = 'data/processed/', keep_columns: List[str] = None) -> None:
     """
     Saves data to parquet file.
@@ -118,9 +141,6 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
 
     # convert the 'date' column to datetime format
     origianl_df = origianl_df.copy().drop_duplicates(subset="date")
-    origianl_df['date'] = pd.to_datetime(origianl_df['date'], utc=False).astype(np.int64)
-    _df['date'] = pd.to_datetime(_df['date'], utc=False).astype(np.int64)
-
     shape_before_merge = _df.shape
 
     # Merge the two dataframes, so that we have fixed data range for each host
@@ -131,13 +151,19 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
     logger.debug(f'How many missing values {len(_df[_df["hostname"].isna()])} out of {_df.shape[0]}')
 
     assert shape_before_merge[0] == _df.shape[0], "length of the artificial dataframe before and after merge should be the same"
+    augment_step = random.randint(60, 90)
+    augment_len = random.randint(15, 45)
 
     # Fill missing values with **fill_value** which is 0 by default
     _df['hostname'] = host
+    _df['power'] = _df['power'].fillna(augment_df(_df, 'power', augment_step, augment_len)['power'])
+    _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', augment_step, augment_len)['cpu1'])
+    _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', augment_step, augment_len)['cpu2'])
     _df['power'] = _df['power'].fillna(140)
     _df['cpu1'] = _df['cpu1'].fillna(29)
     _df['cpu2'] = _df['cpu2'].fillna(29)
     if include_cpu_alloc:
+        _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc', augment_step, augment_len)['cpus_alloc'])
         _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
 
     return _df
@@ -183,7 +209,7 @@ if __name__ == '__main__':
     hosts_to_take.sort()
     
     # generate test and train data
-    for type in ['train', 'test']:
+    for type in ['test', 'train']:
         
         df = raw_df.copy(deep=True)
         

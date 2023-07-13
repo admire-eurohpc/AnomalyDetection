@@ -21,7 +21,7 @@ from ae_encoder import CNN_encoder
 from ae_decoder import CNN_decoder
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
-from utils.plotting import plot_embeddings_vs_real, plot_reconstruction_error_over_time, plot_recon_error_each_node, plot_recon_error_each_node_df
+from utils.plotting import plot_embeddings_vs_real, plot_reconstruction_error_over_time, plot_recon_error_each_node
 
 
 logging.basicConfig(level=logging.DEBUG)
