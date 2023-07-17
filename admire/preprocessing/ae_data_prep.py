@@ -175,7 +175,7 @@ def host_sort(df, hosts):
         res[host] = len(df.index[df['hostname'] == host])
 
     sorted_res = dict(sorted(res.items(), key=lambda item: item[1], reverse=True))
-    return list(sorted_res.keys())[:TAKE_NODES]
+    return list(sorted_res.keys())[:nodes_count]
 
 if __name__ == '__main__':
     
@@ -183,7 +183,7 @@ if __name__ == '__main__':
     data_dir = config['PREPROCESSING']['data_dir']
     save_data_dir = config['PREPROCESSING']['processed_data_dir']
     hosts_blacklist = config['PREPROCESSING']['hosts_blacklist'].split(',')
-    TAKE_NODES = int(config['PREPROCESSING']['nodes_count_to_process'])
+    nodes_count = int(config['PREPROCESSING']['nodes_count_to_process'])
     include_cpu_alloc = bool(config['PREPROCESSING']['with_cpu_alloc'])
     
     important_cols = ['date', 'hostname', 'power', 'cpu1', 'cpu2']
@@ -200,10 +200,10 @@ if __name__ == '__main__':
     hosts_to_take = raw_df['hostname'].unique().tolist()
     hosts_to_take = list(filter(lambda x: x not in hosts_blacklist, hosts_to_take))
     
-    # Sort hosts by name and take only first TAKE_NODES
+    # Sort hosts by name and take only first nodes_count
     # This is done to make sure that we always take the same hosts
     # in test and train data, but it is possible that some hosts
-    # will be missing in test data if they are not in the first TAKE_NODES
+    # will be missing in test data if they are not in the first nodes_count
     # Therefore at the end of the script there is a sparate check to make sure
     # that all hosts from train data are also in test data (and vice versa)
     hosts_to_take.sort()

@@ -23,8 +23,8 @@ class TimeSeriesDataset(Dataset):
                  transform=None, 
                  target_transform=None, 
                  normalize: bool = True,
-                 window_size: int = 80,
-                 slide_length: int = 40,
+                 window_size: int = 60,
+                 slide_length: int = 1,
                  external_transform: Transform = None
                  ) -> None:
         '''
@@ -45,6 +45,7 @@ class TimeSeriesDataset(Dataset):
         self.target_transform = target_transform
         self.normalize = normalize
         self.include_cpu_alloc = config.getboolean('PREPROCESSING','with_cpu_alloc')
+        self.nodes_count = int(config['PREPROCESSING']['nodes_count_to_process'])
         
         # Get all filenames in data_dir
         _, _, filenames = os.walk(data_dir).__next__()
@@ -119,6 +120,15 @@ class TimeSeriesDataset(Dataset):
         
         return self.time_series
     
+    def get_node_len(self):
+        '''Returns the node length adjusted to dataloader scenario (without final N samples) 
+         since we can't reconstruct N min window depending on less than N samples'''
+        return ((self.time_series.shape[2]//self.nodes_count - self.window_size)// self.slide_length) + 1
+    
+    def get_node_full_len(self):
+        '''Returns the full node length including last N samples'''
+        return self.time_series.shape[2]//self.nodes_count 
+    
     def get_input_layer_size_flattened(self):
         return self.time_series.shape[1] * self.time_series.shape[2] * self.window_size
     
@@ -141,7 +151,7 @@ class TimeSeriesDataset(Dataset):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
 
-    dataset = TimeSeriesDataset(data_dir="data/processed/febtop200_withoutalloc/train", normalize=True)
+    dataset = TimeSeriesDataset(data_dir="data/processed/march22-24_top200_withalloc_and_augm_fixed_hours/test", normalize=True)
     d = next(iter(dataset))
     print(d.shape)
     print(d)

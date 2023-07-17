@@ -1,7 +1,6 @@
 import logging
 import os
 import yaml
-from torch import nn
 import torch
 import pandas as pd
 import numpy as np
@@ -10,23 +9,26 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 import configparser
 
+from ae_encoder import CNN_encoder
+from ae_decoder import CNN_decoder
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
 from utils.plotting import *
-LOGS_PATH = 'lightning_logs/ae/2023_04_27-12_22_43'
-path = os.path.join(os.getcwd(), LOGS_PATH, 'checkpoints')
 
 config = configparser.ConfigParser()
 config.read('config.ini')
 
+PROCESSED_PATH = config.get('PREPROCESSING', 'processed_data_dir')
+INCLUDE_CPU_ALLOC = config.getboolean('PREPROCESSING', 'with_cpu_alloc')
+LOGS_PATH = config.get('EVALUATION', 'logs_path')
+NODES_COUNT = int(config['PREPROCESSING']['nodes_count_to_process'])
+
+path = os.path.join(os.getcwd(), LOGS_PATH, 'checkpoints')
 print(os.path.exists(path))
 
 filenames = os.walk(path).__next__()[2] # get any checkpoint
 last_epoch_idx = np.array([int(i.split('-')[0].split('=')[1]) for i in filenames]).argmax()
 filename = filenames[last_epoch_idx]
-
-print(filename)
-
 
 checkpoint = os.path.join(path, filename)
 
@@ -36,22 +38,16 @@ with open(os.path.join(os.getcwd(), LOGS_PATH, 'hparams.yaml'), 'r') as f:
 logging.basicConfig(level=logging.DEBUG)
 
 print(params)
-channels = params['number_of_channels']
-height = params['number_of_nodes']
-width = params['window_size']
-input_shape = (channels, height, width)
 
-ENCODER_LAYERS = params['encoder_layers']
-DECODER_LAYERS = params['decoder_layers']
 LATENT_DIM = params['latent_dim']
 TEST_SLIDE = params['test_slide']
 WINDOW_SIZE = params['window_size']
 TRAIN_SLIDE = params['train_slide']
 
-PROCESSED_PATH = config.get('PREPROCESSING', 'processed_data_dir')
-
-
-use_cuda = torch.cuda.is_available()
+#cuda not required for inference on batch = 1
+#use_cuda = torch.cuda.is_available()
+use_cuda=False
+device = torch.device('cuda:0' if use_cuda else 'cpu')
 kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
 train_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_PATH}/train/", 
@@ -66,37 +62,20 @@ test_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_PATH}/test/",
                                     slide_length=TEST_SLIDE)
 test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=True, **kwargs)
 
-# BUILD ENCODER
-encoder = nn.Sequential()
-encoder.append(nn.Linear(channels * width * height, ENCODER_LAYERS[0]))
-encoder.append(nn.GELU())
+test_len = len(test_dataset)
+d = next(iter(test_dataloader))
+input_shape = d.shape
 
-for i in range(1, len(ENCODER_LAYERS)):
-    encoder.append(nn.Linear(ENCODER_LAYERS[i-1], ENCODER_LAYERS[i]))
-    encoder.append(nn.GELU())
-    
-encoder.append(nn.Linear(ENCODER_LAYERS[-1], LATENT_DIM))
-logging.debug(f'Encoder Summary: {encoder}')
-
-# BUILD DECODER
-decoder = nn.Sequential()
-decoder.append(nn.Linear(LATENT_DIM, DECODER_LAYERS[0]))
-decoder.append(nn.GELU())
-
-for i in range(1, len(DECODER_LAYERS)):
-    decoder.append(nn.Linear(DECODER_LAYERS[i-1], DECODER_LAYERS[i]))
-    decoder.append(nn.GELU())
-    
-decoder.append(nn.Linear(DECODER_LAYERS[-1], channels * width * height))
-logging.debug(f'Decoder Summary: {decoder}')
-
+cnn_encoder = CNN_encoder(kernel_size=10, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
+cnn_decoder = CNN_decoder(latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
 
 autoencoder = LitAutoEncoder.load_from_checkpoint(
                             checkpoint, 
-                            encoder=encoder, 
-                            decoder=decoder,
+                            encoder=cnn_encoder, 
+                            decoder=cnn_decoder,
                             input_shape=input_shape,
-                            latent_dim=LATENT_DIM
+                            latent_dim=LATENT_DIM,
+                            map_location=device
                             )
     
 # ----- TEST ----- #
@@ -108,53 +87,39 @@ autoencoder.freeze()
 
 logging.debug(f"Running model on test set")
 
+test_recon_mae = []
+node_len = test_dataset.get_node_len()
+full_node_len = test_dataset.get_node_full_len()
+
+# Run evaluation on test set
+for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=test_len):
+    batch = batch.to(device)
+    err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch))))
+    err_detached = err.cpu().numpy()
+    test_recon_mae.append(err_detached)
+
+'''Due to processing whole test set at once (one node after one, last WINDOW_SIZE-1 samples of node x
+ are processed together with samples from x+1 node resulting in high reconstruction errors on the beginning and the end of test_set)
+ On training set this is also present but considering vast amount of samples in each node the impact is insignificant'''
+
+test_recon_mae_stripped = []
+for i in range(NODES_COUNT):
+    test_recon_mae_stripped.append(test_recon_mae[(i*full_node_len): (node_len*(i+1)+(full_node_len-node_len)*i)])
+
+test_recon_mae_np = np.reshape(test_recon_mae_stripped, (NODES_COUNT, node_len))
+test_recon_mae_list = test_recon_mae_np.tolist()
+agg_recon_err = np.mean(test_recon_mae_np, axis=0)
+
 test_date_range = test_dataset.get_dates_range()
-test_date_range = pd.date_range(start=test_date_range['start'], end=test_date_range['end'], freq=f'{TEST_SLIDE}min', tz='UTC') # TODO set frequency dynamically?
+test_date_range = pd.date_range(start=test_date_range['start'], end=test_date_range['end'], freq=f'{TEST_SLIDE}min', tz='Europe/Warsaw') # TODO set frequency dynamically?
 
 logging.debug(f'Dates range test: start {test_date_range.min()} end {test_date_range.max()}')
-logging.debug(f'Test len: {len(test_dataloader)}, Dates len: {len(test_date_range)}')
+logging.debug(f'Test len: {len(test_dataloader)}, Dates len: {len(test_date_range)}, Recon len: {len(test_recon_mae)}')
 
-test_reconstruction_mean_absolute_error = []
-for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error evaluation", total=len(test_dataloader)):
-    print(idx)
-    err = torch.sum(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))).detach().numpy()
-    test_reconstruction_mean_absolute_error.append(err)
+hostnames = test_dataset.get_filenames()
 
 # Display the reconstruction error over time manually
-logging.debug(f'Test reconstruction instances: {len(test_reconstruction_mean_absolute_error)}')
-
 logging.debug(f"Plotting reconstruction error over time")
 
-figure, ax = plt.subplots(1,1, figsize=(10, 8))
-ax.scatter(test_date_range.to_numpy()[:len(test_reconstruction_mean_absolute_error)], test_reconstruction_mean_absolute_error)
-ax.set_xlabel('Date')
-ax.set_ylabel('Reconstruction error')
-ax.set_title('Reconstruction error (test data)\nDate on x-axis corresponds to the *start* of the window')
-plt.xticks(rotation=70)
-plt.tight_layout()
-
-all_folders = os.listdir('images/reconstruction/')
-all_folders.sort()
-if len(all_folders)==0:
-    print('no folders found')
-    name = 'RUN'+'1'
-else:
-    latest = all_folders[-1].replace('RUN', '')
-    new = int(latest) + 1
-    name = 'RUN'+str(new)
-os.makedirs('images/reconstruction/'+name)
-
-savedir = os.path.join(os.getcwd(), 'images', 'reconstruction', name)
-if not os.path.exists(savedir):
-    os.makedirs(savedir)
-
-plt.savefig(os.path.join(savedir, 'march_plt_reconstruction.png'))
-with open(os.path.join(savedir, 'config.ini'), 'w') as configfile:
-  config.write(configfile)
-print('Plotly')
-
-plot_reconstruction_error_over_time(test_reconstruction_mean_absolute_error, 
-                                    test_date_range.to_numpy()[:len(test_reconstruction_mean_absolute_error)], 
-                                    show=True, 
-                                    write=True,
-                                    savedir=savedir)
+plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=LOGS_PATH)
+plot_recon_error_agg(reconstruction_errors = agg_recon_err, time_axis = test_date_range, hostnames = 'mean recon_error', savedir=LOGS_PATH)
