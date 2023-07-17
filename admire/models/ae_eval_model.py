@@ -21,7 +21,7 @@ config.read('config.ini')
 PROCESSED_PATH = config.get('PREPROCESSING', 'processed_data_dir')
 INCLUDE_CPU_ALLOC = config.getboolean('PREPROCESSING', 'with_cpu_alloc')
 LOGS_PATH = config.get('EVALUATION', 'logs_path')
-NODES_COUNT = int(config['PREPROCESSING']['nodes_count_to_process'])
+NODES_COUNT = config.getint('PREPROCESSING', 'nodes_count_to_process')
 
 path = os.path.join(os.getcwd(), LOGS_PATH, 'checkpoints')
 print(os.path.exists(path))

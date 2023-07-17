@@ -45,7 +45,7 @@ class TimeSeriesDataset(Dataset):
         self.target_transform = target_transform
         self.normalize = normalize
         self.include_cpu_alloc = config.getboolean('PREPROCESSING','with_cpu_alloc')
-        self.nodes_count = int(config['PREPROCESSING']['nodes_count_to_process'])
+        self.nodes_count = config.getint('PREPROCESSING', 'nodes_count_to_process')
         
         # Get all filenames in data_dir
         _, _, filenames = os.walk(data_dir).__next__()

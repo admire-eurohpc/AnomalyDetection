@@ -21,7 +21,7 @@ from ae_encoder import CNN_encoder
 from ae_decoder import CNN_decoder
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
-from utils.plotting import plot_embeddings_vs_real, plot_reconstruction_error_over_time, plot_recon_error_each_node
+from utils.plotting import plot_recon_error_agg, plot_recon_error_each_node
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -48,16 +48,17 @@ MAX_EPOCHS = config.getint('TRAINING', 'MAX_EPOCHS')
 WINDOW_SIZE = config.getint('TRAINING', 'WINDOW_SIZE')
 TRAIN_SLIDE = config.getint('TRAINING', 'TRAIN_SLIDE')
 TEST_SLIDE = config.getint('TRAINING', 'TEST_SLIDE')
-
-ENCODER_LAYERS = np.array([int(x) for x in config.get('TRAINING', 'ENCODER_LAYERS').split(',')])
-DECODER_LAYERS = np.array([int(x) for x in config.get('TRAINING', 'DECODER_LAYERS').split(',')])
 LATENT_DIM = config.getint('TRAINING', 'LATENT_DIM')
+NODES_COUNT = config.getint('PREPROCESSING', 'nodes_count_to_process')
 LR = config.getfloat('TRAINING', 'LEARNING_RATE')
 SHUFFLE = config.getboolean('TRAINING', 'SHUFFLE')
 VAL_SHUFFLE = config.getboolean('TRAINING', 'VAL_SHUFFLE')
+INCLUDE_CPU_ALLOC = config.getboolean('PREPROCESSING', 'with_cpu_alloc')
 
 PROCESSED_DATA_DIR = config.get('PREPROCESSING', 'processed_data_dir')
-INCLUDE_CPU_ALLOC = config.getboolean('PREPROCESSING', 'with_cpu_alloc')
+LOGS_PATH = config.get('EVALUATION', 'logs_path')
+
+
 
 if __name__ == "__main__":
     
@@ -114,8 +115,6 @@ if __name__ == "__main__":
         'window_size': WINDOW_SIZE,
         'train_slide': TRAIN_SLIDE,
         'test_slide': TEST_SLIDE,
-        'encoder_layers': ENCODER_LAYERS,
-        'decoder_layers': DECODER_LAYERS,
         'latent_dim': LATENT_DIM,
         'number_of_channels': channels,
         'seed': SEED,
@@ -171,52 +170,51 @@ if __name__ == "__main__":
                                 latent_dim=LATENT_DIM,
                                 map_location="cuda:0"
                                 )
-    # # ----- TEST ----- #
-    # # Now test the model on february data
-    # # Run the model on the entire test set and report reconstruction error to tensorboard
+    # ----- TEST ----- #
+
+    # Now test the model on february data
+    # Run the model on the entire test set and report reconstruction error to tensorboard
     autoencoder.eval()
     autoencoder.freeze()
-    
+
     logging.debug(f"Running model on test set")
 
-    test_reconstruction_mean_absolute_error = []
+    test_recon_mae = []
+    node_len = test_dataset.get_node_len()
+    full_node_len = test_dataset.get_node_full_len()
+
     # Run evaluation on test set
     for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=test_len):
         batch = batch.to(device)
         err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch))))
         err_detached = err.cpu().numpy()
-        logger.experiment.add_scalar("test_reconstruction_error", err_detached, idx)
-        test_reconstruction_mean_absolute_error.append(err_detached)
-    
-    cut = test_len%(200)
-    test_res = np.reshape(test_reconstruction_mean_absolute_error[0:-cut], (200, test_len//200))
-    test_res = test_res.tolist()
-    # Plot reconstruction error over time
-    dates_range = test_dataset.get_dates_range()
-    hostnames = test_dataset.get_filenames()
-    #df = pd.DataFrame(data={'ReconError': test_res, 'hostnames': hostnames})
-    logging.debug(f'Date range: {dates_range["end"]} - {dates_range["start"]}')
-    dates_range = pd.date_range(start=dates_range["start"], end=dates_range["end"], freq='1min', tz='Europe/Warsaw') #shift of 2 hours
-    dates_range = dates_range.to_numpy()[:len(test_reconstruction_mean_absolute_error)] # Fit dates range to actual data (bear in mind that last date is max - WINDOW_SIZE)
-    logging.debug(f"Plotting reconstruction error over time")
-    plot_recon_error_each_node(n_nodes = 200, time_axis = dates_range, data = test_res, hostnames = hostnames, savedir=image_save_path)
-    # plot_reconstruction_error_over_time(
-    #     reconstruction_errors=test_reconstruction_mean_absolute_error,
-    #     time_axis=dates_range,
-    #     write=True,
-    #     show=False,
-    #     savedir=image_save_path
-    # )
+        test_recon_mae.append(err_detached)
 
-    # Matplotlib scatter
-    fig, ax = plt.subplots(figsize=(10, 10))
-    ax.scatter(dates_range, test_reconstruction_mean_absolute_error)
-    ax.set_xlabel('Date')
-    ax.set_ylabel('Reconstruction error')
-    ax.set_title('Reconstruction error over time')
-    fig.savefig(os.path.join(image_save_path, 'plt_reconstruction_error_over_time.png'))
-    logger.experiment.add_figure("reconstruction_error_over_time_figure", fig)
-    logging.debug(f"Saved reconstruction error over time figure")
+    '''Due to processing whole test set at once (one node after one, last WINDOW_SIZE-1 samples of node x
+    are processed together with samples from x+1 node resulting in high reconstruction errors on the beginning and the end of test_set)
+    On training set this is also present but considering vast amount of samples in each node the impact is insignificant'''
+
+    test_recon_mae_stripped = []
+    for i in range(NODES_COUNT):
+        test_recon_mae_stripped.append(test_recon_mae[(i*full_node_len): (node_len*(i+1)+(full_node_len-node_len)*i)])
+
+    test_recon_mae_np = np.reshape(test_recon_mae_stripped, (NODES_COUNT, node_len))
+    test_recon_mae_list = test_recon_mae_np.tolist()
+    agg_recon_err = np.mean(test_recon_mae_np, axis=0)
+
+    test_date_range = test_dataset.get_dates_range()
+    test_date_range = pd.date_range(start=test_date_range['start'], end=test_date_range['end'], freq=f'{TEST_SLIDE}min', tz='Europe/Warsaw') # TODO set frequency dynamically?
+
+    logging.debug(f'Dates range test: start {test_date_range.min()} end {test_date_range.max()}')
+    logging.debug(f'Test len: {len(test_dataloader)}, Dates len: {len(test_date_range)}, Recon len: {len(test_recon_mae)}')
+
+    hostnames = test_dataset.get_filenames()
+
+    # Display the reconstruction error over time manually
+    logging.debug(f"Plotting reconstruction error over time")
+
+    plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=LOGS_PATH)
+    plot_recon_error_agg(reconstruction_errors = agg_recon_err, time_axis = test_date_range, hostnames = 'mean recon_error', savedir=LOGS_PATH)
 
 
     # Plot some reconstructions vs real examples
