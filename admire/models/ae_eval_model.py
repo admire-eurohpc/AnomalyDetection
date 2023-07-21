@@ -7,6 +7,7 @@ import numpy as np
 import tqdm
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
+from scipy.stats import zscore
 import configparser
 
 from ae_encoder import CNN_encoder
@@ -123,3 +124,10 @@ logging.debug(f"Plotting reconstruction error over time")
 
 plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=LOGS_PATH)
 plot_recon_error_agg(reconstruction_errors = agg_recon_err, time_axis = test_date_range, hostnames = 'mean recon_error', savedir=LOGS_PATH)
+
+#calculate threshold metric z-score for anomaly evaluation
+zscores = np.zeros((NODES_COUNT, node_len))
+for i in range(node_len):
+    zscores[:, i] = (zscore(test_recon_mae_np[:, i]))
+
+plot_recon_error_each_node(reconstruction_errors = zscores, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=LOGS_PATH, out_name = 'zscores')

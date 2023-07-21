@@ -72,7 +72,12 @@ def plot_embeddings_vs_real(_embeddings: npt.NDArray,
             if show:
                 fig.show()
 
-def plot_recon_error_each_node(reconstruction_errors: list, time_axis: Union[List[int], List[Any], None], n_nodes: int,  hostnames: list, savedir: str = 'images'):
+def plot_recon_error_each_node(reconstruction_errors: list, 
+                               time_axis: Union[List[int], List[Any], None], 
+                               n_nodes: int,  
+                               hostnames: list, 
+                               savedir: str = 'images', 
+                               out_name: str = 'plotly_reconstruction'):
     '''
     Plots the reconstruction error over time for each node.
 
@@ -87,10 +92,13 @@ def plot_recon_error_each_node(reconstruction_errors: list, time_axis: Union[Lis
     for i in tqdm.tqdm(range(n_nodes), desc="Plotting node ReconError"):
         fig.append_trace(go.Scatter(x = time_axis, y = reconstruction_errors[i], mode="lines", name=hostnames[i]), row=1, col=1)
 
-    fig.write_html(os.path.join(savedir, 'plotly_reconstruction.html'))
-    fig.write_image(os.path.join(savedir, 'plotly_reconstruction.png'))
+    fig.write_html(os.path.join(savedir, out_name + '.html'))
+    fig.write_image(os.path.join(savedir, out_name + '.png'))
 
-def plot_recon_error_agg(reconstruction_errors: list, time_axis: Union[List[int], List[Any], None], hostnames: list, savedir: str = 'images'):
+def plot_recon_error_agg(reconstruction_errors: list, 
+                         time_axis: Union[List[int], List[Any], None], 
+                         hostnames: list, 
+                         savedir: str = 'images'):
     '''
     Plots the aggregated reconstruction error over time.
     
