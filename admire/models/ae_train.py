@@ -1,10 +1,10 @@
 import logging
 import os 
 import pandas as pd
-from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import configparser
+import tqdm
 
 # -- Pytorch imports --
 import torch
@@ -14,7 +14,12 @@ from torchsummary import summary
 import lightning as L
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import TensorBoardLogger
-import tqdm
+
+# -- Other Imports --
+from scipy.stats import zscore
+from datetime import datetime
+
+
 
 # -- Own modules --
 from ae_encoder import CNN_encoder
@@ -56,7 +61,6 @@ VAL_SHUFFLE = config.getboolean('TRAINING', 'VAL_SHUFFLE')
 INCLUDE_CPU_ALLOC = config.getboolean('PREPROCESSING', 'with_cpu_alloc')
 
 PROCESSED_DATA_DIR = config.get('PREPROCESSING', 'processed_data_dir')
-LOGS_PATH = config.get('EVALUATION', 'logs_path')
 
 
 
@@ -71,6 +75,7 @@ if __name__ == "__main__":
 
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda:0' if use_cuda else 'cpu')
+    accelerator = 'gpu' if use_cuda else 'cpu'
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
     
     train_loader = DataLoader(
@@ -152,7 +157,8 @@ if __name__ == "__main__":
             lr_callback,
             ],   
         enable_checkpointing=config.getboolean('TRAINING', 'ENABLE_CHECKPOINTING'),
-        accelerator="gpu", devices=1, strategy="auto",
+        accelerator=accelerator,
+        devices=1, strategy="auto",
         )
     trainer.fit(
         model=autoencoder, 
@@ -168,7 +174,7 @@ if __name__ == "__main__":
                                 decoder=cnn_decoder,
                                 input_shape=input_shape,
                                 latent_dim=LATENT_DIM,
-                                map_location="cuda:0"
+                                map_location=device
                                 )
     # ----- TEST ----- #
 
@@ -213,9 +219,16 @@ if __name__ == "__main__":
     # Display the reconstruction error over time manually
     logging.debug(f"Plotting reconstruction error over time")
 
-    plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=LOGS_PATH)
-    plot_recon_error_agg(reconstruction_errors = agg_recon_err, time_axis = test_date_range, hostnames = 'mean recon_error', savedir=LOGS_PATH)
+    plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=image_save_path)
+    plot_recon_error_agg(reconstruction_errors = agg_recon_err, time_axis = test_date_range, hostnames = 'mean recon_error', savedir=image_save_path)
 
+
+    #calculate threshold metric z-score for anomaly evaluation
+    zscores = np.zeros((NODES_COUNT, node_len))
+    for i in range(node_len):
+        zscores[:, i] = (zscore(test_recon_mae_np[:, i]))
+
+    plot_recon_error_each_node(reconstruction_errors = zscores, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=image_save_path, out_name = 'zscores')
 
     # Plot some reconstructions vs real examples
     # logging.debug(f"Plotting reconstructions vs real")

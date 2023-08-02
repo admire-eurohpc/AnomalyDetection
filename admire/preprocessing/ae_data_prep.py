@@ -1,12 +1,12 @@
 import json
-from typing import List
+from typing import List, Iterator
 import pandas as pd
 import numpy as np
 import os
 import logging
 import configparser
 import random
-from itertools import cycle, compress
+from itertools import cycle, repeat, compress, chain
 from tqdm import tqdm
 
 logging.basicConfig(level=logging.DEBUG)
@@ -54,25 +54,47 @@ def read_data(raw_data_dir: str = 'data/raw', important_cols: List[str] = None) 
     logger.debug(f'DF info {df.info()}')
     return df.reset_index(drop=True)
 
-def augment_df(original_df: pd.DataFrame, column: str, augment_step: int, augment_len: int):
+def augment_df(original_df: pd.DataFrame, column: str, iterator: Iterator, augment_type: int):
     copy_df = original_df.copy()
+    """
+    spike_all_features_iter : iterator for populating time-series with normal power,t1,t2,cpu_spikes
+    spike_only_cpu_feature_iter : iterator for populating time-series with random cpu_spikes
+    We want to do the second because of random spikes in cpus due to changing user allocations, it shouldn't be an error here
+    TODO: make an iterator a variable passed through function to make the code cleaner
+    """
 
-    temp = cycle([True] * augment_len + [False] * augment_step)
-    indices = list(compress(copy_df.index, temp))
+    #temp = cycle(chain(spike_all_features_iter, spike_all_features_iter_0))
+    iterator_res = cycle(iterator)
+    indices = list(compress(copy_df.index, iterator_res))
 
     match column:
         case 'cpus_alloc':
             vals = 48
             copy_df.loc[indices, 'cpus_alloc'] = vals
         case 'cpu1':
-            vals = random.randint(48, 51)
-            copy_df.loc[indices, 'cpu1'] = vals
+            match augment_type:
+                case 1:
+                    vals = random.randint(48, 51)
+                    copy_df.loc[indices, 'cpu1'] = vals
+                case 2:
+                    vals = random.randint(28, 30)
+                    copy_df.loc[indices, 'cpu1'] = vals
         case 'cpu2':
-            vals = random.randint(48, 51)
-            copy_df.loc[indices, 'cpu2'] = vals
+            match augment_type:
+                case 1:
+                    vals = random.randint(48, 51)
+                    copy_df.loc[indices, 'cpu2'] = vals
+                case 2:
+                    vals = random.randint(28, 30)
+                    copy_df.loc[indices, 'cpu2'] = vals
         case 'power':
-            vals = random.randint(430, 490)
-            copy_df.loc[indices, 'power'] = vals
+            match augment_type:
+                case 1:
+                    vals = random.randint(430, 490)
+                    copy_df.loc[indices, 'power'] = vals
+                case 2:
+                    vals = random.randint(134, 146)
+                    copy_df.loc[indices, 'power'] = vals
 
     return copy_df
 def save_data(df: pd.DataFrame, filename: str, data_dir: str = 'data/processed/', keep_columns: List[str] = None) -> None:
@@ -151,19 +173,28 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
     logger.debug(f'How many missing values {len(_df[_df["hostname"].isna()])} out of {_df.shape[0]}')
 
     assert shape_before_merge[0] == _df.shape[0], "length of the artificial dataframe before and after merge should be the same"
+
+    #TODO: make a function to perform augmentation, code became to large and redundant in places
     augment_step = random.randint(60, 90)
     augment_len = random.randint(15, 45)
 
+    spike_all_features_iter = (([True]*augment_len + [False]*augment_step)*5 + ([False]*(augment_step + augment_len))*2)
+    spike_only_cpu_feature_iter = (([False]*(augment_step + augment_len))*5 + ([True]*augment_step + [False]*augment_len)*2)
+
     # Fill missing values with **fill_value** which is 0 by default
     _df['hostname'] = host
-    _df['power'] = _df['power'].fillna(augment_df(_df, 'power', augment_step, augment_len)['power'])
-    _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', augment_step, augment_len)['cpu1'])
-    _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', augment_step, augment_len)['cpu2'])
-    _df['power'] = _df['power'].fillna(140)
-    _df['cpu1'] = _df['cpu1'].fillna(29)
-    _df['cpu2'] = _df['cpu2'].fillna(29)
+    _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_all_features_iter, 1)['power'])
+    _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_all_features_iter, 1)['cpu1'])
+    _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_all_features_iter, 1)['cpu2'])
+    _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_only_cpu_feature_iter, 2)['power'])
+    _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_only_cpu_feature_iter, 2)['cpu1'])
+    _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_only_cpu_feature_iter, 2)['cpu2'])
+    _df['power'] = _df['power'].fillna(random.randint(138, 144))
+    _df['cpu1'] = _df['cpu1'].fillna(random.randint(28, 30))
+    _df['cpu2'] = _df['cpu2'].fillna(random.randint(28, 30))
     if include_cpu_alloc:
-        _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc', augment_step, augment_len)['cpus_alloc'])
+        _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_all_features_iter, 1)['cpus_alloc'])
+        _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_only_cpu_feature_iter, 1)['cpus_alloc'])
         _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
 
     return _df
