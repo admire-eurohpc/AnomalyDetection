@@ -9,8 +9,6 @@ import logging
 # define the LightningModule
 class LitAutoEncoder(pl.LightningModule):
     def __init__(self, 
-                 input_shape: tuple,
-                 latent_dim: int,
                  encoder: nn.Module,
                  decoder: nn.Module,
                  lr: int = 1e-4,
@@ -25,7 +23,7 @@ class LitAutoEncoder(pl.LightningModule):
         
     def forward(self, x):
         z = self.encoder(x)
-        x_hat = self.decoder(z)
+        x_hat = self.decoder(z, 40)
         return x_hat
     
     def _get_reconstruction_loss(self, x, x_hat):

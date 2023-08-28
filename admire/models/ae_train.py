@@ -18,12 +18,13 @@ from lightning.pytorch.loggers import TensorBoardLogger
 # -- Other Imports --
 from scipy.stats import zscore
 from datetime import datetime
+from sequitur.models import CONV_LSTM_AE
 
 
 
 # -- Own modules --
-from ae_encoder import CNN_encoder
-from ae_decoder import CNN_decoder
+from ae_encoder import CNN_encoder, CNN_LSTM_encoder
+from ae_decoder import CNN_decoder, CNN_LSTM_decoder
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
 from utils.plotting import plot_recon_error_agg, plot_recon_error_each_node
@@ -66,6 +67,12 @@ PROCESSED_DATA_DIR = config.get('PREPROCESSING', 'processed_data_dir')
 
 if __name__ == "__main__":
     
+    use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda:0' if use_cuda else 'cpu')
+    accelerator = 'gpu' if use_cuda else 'cpu'
+    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
+    trainer_kwargs = {'accelerator': 'gpu', 'devices' : 1, 'strategy' : 'auto'} if use_cuda else {'accelerator': 'cpu'}
+    
     # Setup data generator class and load it into a pytorch dataloader
     dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_DATA_DIR}/train/", 
                                 normalize=True, 
@@ -73,11 +80,6 @@ if __name__ == "__main__":
                                 slide_length=TRAIN_SLIDE)
     train_set, val_set = torch.utils.data.random_split(dataset, [0.8, 0.2])
 
-    use_cuda = torch.cuda.is_available()
-    device = torch.device('cuda:0' if use_cuda else 'cpu')
-    accelerator = 'gpu' if use_cuda else 'cpu'
-    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
-    
     train_loader = DataLoader(
         dataset=train_set,
         batch_size=BATCH_SIZE,
@@ -102,15 +104,17 @@ if __name__ == "__main__":
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False, **kwargs)
     
     # Get input size and shapes
-    d = next(iter(test_dataloader))
+    d = next(iter(train_loader))
     input_shape = d.shape
-    channels = d.shape[0]
-    width = d.shape[1]
+    batch = d.shape[0]
+    nodes = d.shape[1]
+    n_features = d.shape[2]
+    win_size = d.shape[3]
     test_len = len(test_dataset)
     logging.debug(f"test input_shape: {test_len}")
 
-    logging.debug(f"input_shape: {input_shape}")
-    logging.debug(f'channels: {channels}, width: {width}')
+    logging.debug(f"input_shape: {input_shape[1:]}")
+    logging.debug(f'batch: {batch}, nodes: {nodes}, number of features: {n_features}, window size: {win_size}')
     
     # Log hyperparameters for tensorboard
     logger.log_hyperparams({
@@ -121,14 +125,17 @@ if __name__ == "__main__":
         'train_slide': TRAIN_SLIDE,
         'test_slide': TEST_SLIDE,
         'latent_dim': LATENT_DIM,
-        'number_of_channels': channels,
         'seed': SEED,
     })
 
     # Init the lightning autoencoder
-    cnn_encoder = CNN_encoder(kernel_size=10, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
-    cnn_decoder = CNN_decoder(latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
-    autoencoder = LitAutoEncoder(input_shape, LATENT_DIM, cnn_encoder, cnn_decoder)
+
+    cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=2, h_lstm_chan=[2,4], cpu_alloc=True)
+    cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=2, lstm_out_dim =1, h_lstm_chan=[2,4], cpu_alloc=True)
+    lstm_conv_autoencoder = LitAutoEncoder(cnn_lstm_encoder, cnn_lstm_decoder)
+    # cnn_encoder = CNN_encoder(kernel_size=10, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
+    # cnn_decoder = CNN_decoder(latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
+    # autoencoder = LitAutoEncoder(cnn_encoder, cnn_decoder)
 
     # Add early stopping
     early_stop_callback = pl.callbacks.EarlyStopping(
@@ -147,7 +154,7 @@ if __name__ == "__main__":
     lr_callback = pl.callbacks.LearningRateMonitor(logging_interval = 'epoch')
 
 
-    logging.debug(f'Autoencoder Summary: {autoencoder}')
+    logging.debug(f'Autoencoder Summary: {lstm_conv_autoencoder}')
     trainer = pl.Trainer(
         max_epochs=MAX_EPOCHS,
         logger=logger,
@@ -161,17 +168,17 @@ if __name__ == "__main__":
         devices=1, strategy="auto",
         )
     trainer.fit(
-        model=autoencoder, 
+        model=lstm_conv_autoencoder, 
         train_dataloaders=train_loader,
         val_dataloaders=val_loader
         )
 
     logging.debug(os.path.join(logger.save_dir, logger.name, logger.version, "checkpoints"))
     
-    autoencoder = LitAutoEncoder.load_from_checkpoint(
+    lstm_conv_autoencoder = LitAutoEncoder.load_from_checkpoint(
                                 checkpoint_path=checkpoint_callback.best_model_path,
-                                encoder=cnn_encoder, 
-                                decoder=cnn_decoder,
+                                encoder=cnn_lstm_encoder, 
+                                decoder=cnn_lstm_decoder,
                                 input_shape=input_shape,
                                 latent_dim=LATENT_DIM,
                                 map_location=device
@@ -180,8 +187,8 @@ if __name__ == "__main__":
 
     # Now test the model on february data
     # Run the model on the entire test set and report reconstruction error to tensorboard
-    autoencoder.eval()
-    autoencoder.freeze()
+    lstm_conv_autoencoder.eval()
+    lstm_conv_autoencoder.freeze()
 
     logging.debug(f"Running model on test set")
 
@@ -192,7 +199,8 @@ if __name__ == "__main__":
     # Run evaluation on test set
     for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=test_len):
         batch = batch.to(device)
-        err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch))))
+        print(batch.size())
+        err = torch.mean(torch.abs(batch - lstm_conv_autoencoder.decoder(lstm_conv_autoencoder.encoder(batch), batch.shape[0])))
         err_detached = err.cpu().numpy()
         test_recon_mae.append(err_detached)
 

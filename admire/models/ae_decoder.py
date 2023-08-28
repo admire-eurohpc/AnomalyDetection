@@ -1,5 +1,9 @@
 import logging
+import torch
 import torch.nn as nn
+
+from sequitur.models.lstm_ae import LSTM_AE
+from sequitur.models.conv_ae import CONV_AE
 
 class Decoder(nn.Module):
     def __init__(self, num_input_channels: int, base_channel_size: int, latent_dim: int, act_fn: object = nn.GELU):
@@ -67,3 +71,63 @@ class CNN_decoder(nn.Module):
     def forward(self, x):
         #logging.debug(f'Decoder inference shape: {x.shape}')
         return self.model(x)
+    
+class CNN_LSTM_decoder(nn.Module):
+    def __init__(self, lstm_input_dim, lstm_out_dim, h_lstm_chan, cpu_alloc) -> None:
+        super().__init__()
+        '''
+        input_dim - encoding dim coming from encoder
+        out_dim - input dim coming to the lstm_encoder (it's not a sequence length, it's number of features) (switcheroo)
+        h_dims - lstm channels
+        h_activ - activ function
+        '''
+        #LSTM decoder
+        layer_dims = [lstm_input_dim] + h_lstm_chan + [h_lstm_chan[-1]]
+        self.num_layers = len(layer_dims) - 1
+        self.layers = nn.ModuleList()
+        for index in range(self.num_layers):
+            layer = nn.LSTM(
+                input_size=layer_dims[index],
+                hidden_size=layer_dims[index + 1],
+                num_layers=1,
+                batch_first=True
+            )
+            self.layers.append(layer)
+
+        self.h_activ = nn.Sigmoid()
+        self.dense_matrix = nn.Parameter(
+            torch.rand((layer_dims[-1], lstm_out_dim), dtype=torch.float),
+            requires_grad=True
+        )
+        
+        #CNN decoder
+        cnn_modules = []
+        channels = [16, 8, 1]
+
+        if cpu_alloc:
+            kernel_size2d = (4,3)
+        else:
+            kernel_size2d = 3
+        cnn_modules.append(nn.Linear(40, 80)) #latent_dim 4
+        cnn_modules.append(nn.Unflatten(1, (channels[0], 5))) #80 into 16x5
+        cnn_modules.append(nn.ConvTranspose1d(channels[0], channels[1], kernel_size=4, stride = 4)) #input (16, 5) output (16,20)
+        cnn_modules.append(nn.Unflatten(2, (1, 20)))  #input (16, 20) output (16,1,20)
+        cnn_modules.append(nn.ConvTranspose2d(channels[1], channels[2], kernel_size=kernel_size2d, stride =3))
+        cnn_modules.append(nn.ReLU())
+
+
+        self.cnn_decoder = nn.Sequential(*cnn_modules)
+
+    def forward(self, x, seq_len):
+        print("decoder: ", x.size(), seq_len)
+        x = x.repeat(seq_len, 1) #TODO reshape zamiast repeat to spróbowania
+        
+        for index, layer in enumerate(self.layers):
+            print("decoder: ", x.size())
+            x, (h_n, c_n) = layer(x)
+
+            if self.h_activ and index < self.num_layers - 1:
+                x = self.h_activ(x)
+
+        lstm_decoding = torch.mm(x.squeeze(), self.dense_matrix)
+        return self.cnn_decoder(lstm_decoding)

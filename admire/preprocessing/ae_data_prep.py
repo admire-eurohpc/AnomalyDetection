@@ -155,7 +155,7 @@ def get_data_for_hosts(df: pd.DataFrame, hosts: List[str]) -> pd.DataFrame:
     """Returns/filters datafram for specified hosts only. Hosts should be a list of strings."""
     return df[df['hostname'].isin(hosts)]
 
-def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str, host: str, fill_value: int = 0) -> pd.DataFrame:
+def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str, host: str, data_set: str) -> pd.DataFrame:
     """Fill places where there is no measurements for a host between two dates (inclusive)"""
     _df = pd.DataFrame()
     # Create a dataframe with all dates between start and end in UTC+1 timezone
@@ -182,20 +182,29 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
     spike_only_cpu_feature_iter = (([False]*(augment_step + augment_len))*5 + ([True]*augment_step + [False]*augment_len)*2)
 
     # Fill missing values with **fill_value** which is 0 by default
-    _df['hostname'] = host
-    _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_all_features_iter, 1)['power'])
-    _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_all_features_iter, 1)['cpu1'])
-    _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_all_features_iter, 1)['cpu2'])
-    _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_only_cpu_feature_iter, 2)['power'])
-    _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_only_cpu_feature_iter, 2)['cpu1'])
-    _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_only_cpu_feature_iter, 2)['cpu2'])
-    _df['power'] = _df['power'].fillna(random.randint(138, 144))
-    _df['cpu1'] = _df['cpu1'].fillna(random.randint(28, 30))
-    _df['cpu2'] = _df['cpu2'].fillna(random.randint(28, 30))
-    if include_cpu_alloc:
-        _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_all_features_iter, 1)['cpus_alloc'])
-        _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_only_cpu_feature_iter, 1)['cpus_alloc'])
-        _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
+    match data_set:
+        case 'train':
+            _df['hostname'] = host
+            _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_all_features_iter, 1)['power'])
+            _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_all_features_iter, 1)['cpu1'])
+            _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_all_features_iter, 1)['cpu2'])
+            _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_only_cpu_feature_iter, 2)['power'])
+            _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_only_cpu_feature_iter, 2)['cpu1'])
+            _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_only_cpu_feature_iter, 2)['cpu2'])
+            _df['power'] = _df['power'].fillna(random.randint(138, 144))
+            _df['cpu1'] = _df['cpu1'].fillna(random.randint(28, 30))
+            _df['cpu2'] = _df['cpu2'].fillna(random.randint(28, 30))
+            if include_cpu_alloc:
+                _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_all_features_iter, 1)['cpus_alloc'])
+                _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_only_cpu_feature_iter, 1)['cpus_alloc'])
+                _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
+
+        case 'test':
+            _df['power'] = _df['power'].fillna(random.randint(138, 144))
+            _df['cpu1'] = _df['cpu1'].fillna(random.randint(28, 30))
+            _df['cpu2'] = _df['cpu2'].fillna(random.randint(28, 30))
+            if include_cpu_alloc:
+                _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
 
     return _df
 
@@ -275,7 +284,7 @@ if __name__ == '__main__':
         for host in tqdm(hosts, desc='Filling missing data'):
             logger.debug(f'Filling missing data for {host}')
             # Fill missing data for each host
-            _df_host = fill_missing_data(df[df['hostname'] == host], date_range_start, date_range_end, host)
+            _df_host = fill_missing_data(df[df['hostname'] == host], date_range_start, date_range_end, host, type)
             # Save each host data to a separate file named after the host
             save_data(_df_host, f'{host}', os.path.join(save_data_dir, type), keep_columns=important_cols)
             

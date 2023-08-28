@@ -110,6 +110,10 @@ for i in range(NODES_COUNT):
 test_recon_mae_np = np.reshape(test_recon_mae_stripped, (NODES_COUNT, node_len))
 test_recon_mae_list = test_recon_mae_np.tolist()
 agg_recon_err = np.mean(test_recon_mae_np, axis=0)
+agg_recon_err_2 = np.median(test_recon_mae_np, axis=0)
+agg_recon_err_3 = np.quantile(test_recon_mae_np, 0.25, axis=0)
+agg_recon_err_4 = np.quantile(test_recon_mae_np, 0.75, axis=0)
+
 
 test_date_range = test_dataset.get_dates_range()
 test_date_range = pd.date_range(start=test_date_range['start'], end=test_date_range['end'], freq=f'{TEST_SLIDE}min', tz='Europe/Warsaw') # TODO set frequency dynamically?
@@ -123,7 +127,11 @@ hostnames = test_dataset.get_filenames()
 logging.debug(f"Plotting reconstruction error over time")
 
 plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=LOGS_PATH)
-plot_recon_error_agg(reconstruction_errors = agg_recon_err, time_axis = test_date_range, hostnames = 'mean recon_error', savedir=LOGS_PATH)
+plot_recon_error_agg(reconstruction_errors = agg_recon_err, time_axis = test_date_range, hostnames = 'mean_recon_error', savedir=LOGS_PATH)
+plot_recon_error_agg(reconstruction_errors = agg_recon_err_2, time_axis = test_date_range, hostnames = 'median_recon_error', savedir=LOGS_PATH)
+plot_recon_error_agg(reconstruction_errors = agg_recon_err_3, time_axis = test_date_range, hostnames = 'first_quartile_recon_error', savedir=LOGS_PATH)
+plot_recon_error_agg(reconstruction_errors = agg_recon_err_4, time_axis = test_date_range, hostnames = 'third_quartile_recon_error', savedir=LOGS_PATH)
+
 
 #calculate threshold metric z-score for anomaly evaluation
 zscores = np.zeros((NODES_COUNT, node_len))
