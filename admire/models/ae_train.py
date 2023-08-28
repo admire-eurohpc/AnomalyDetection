@@ -66,6 +66,12 @@ PROCESSED_DATA_DIR = config.get('PREPROCESSING', 'processed_data_dir')
 
 if __name__ == "__main__":
     
+    use_cuda = torch.cuda.is_available()
+    device = torch.device('cuda:0' if use_cuda else 'cpu')
+    accelerator = 'gpu' if use_cuda else 'cpu'
+    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
+    
+
     # Setup data generator class and load it into a pytorch dataloader
     dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_DATA_DIR}/train/", 
                                 normalize=True, 
@@ -73,11 +79,7 @@ if __name__ == "__main__":
                                 slide_length=TRAIN_SLIDE)
     train_set, val_set = torch.utils.data.random_split(dataset, [0.8, 0.2])
 
-    use_cuda = torch.cuda.is_available()
-    device = torch.device('cuda:0' if use_cuda else 'cpu')
-    accelerator = 'gpu' if use_cuda else 'cpu'
-    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
-    
+
     train_loader = DataLoader(
         dataset=train_set,
         batch_size=BATCH_SIZE,
@@ -102,15 +104,19 @@ if __name__ == "__main__":
     test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False, **kwargs)
     
     # Get input size and shapes
-    d = next(iter(test_dataloader))
+    d = next(iter(train_loader))
     input_shape = d.shape
-    channels = d.shape[0]
-    width = d.shape[1]
+    batch = d.shape[0]
+    nodes = d.shape[1]
+    n_features = d.shape[2]
+    win_size = d.shape[3]
+
     test_len = len(test_dataset)
     logging.debug(f"test input_shape: {test_len}")
 
     logging.debug(f"input_shape: {input_shape}")
-    logging.debug(f'channels: {channels}, width: {width}')
+    logging.debug(f'batch: {batch}, nodes: {nodes}, number of features: {n_features}, window size: {win_size}')
+
     
     # Log hyperparameters for tensorboard
     logger.log_hyperparams({
@@ -121,14 +127,13 @@ if __name__ == "__main__":
         'train_slide': TRAIN_SLIDE,
         'test_slide': TEST_SLIDE,
         'latent_dim': LATENT_DIM,
-        'number_of_channels': channels,
         'seed': SEED,
     })
 
     # Init the lightning autoencoder
     cnn_encoder = CNN_encoder(kernel_size=10, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
     cnn_decoder = CNN_decoder(latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
-    autoencoder = LitAutoEncoder(input_shape, LATENT_DIM, cnn_encoder, cnn_decoder)
+    autoencoder = LitAutoEncoder(cnn_encoder, cnn_decoder)
 
     # Add early stopping
     early_stop_callback = pl.callbacks.EarlyStopping(

@@ -9,8 +9,6 @@ import logging
 # define the LightningModule
 class LitAutoEncoder(pl.LightningModule):
     def __init__(self, 
-                 input_shape: tuple,
-                 latent_dim: int,
                  encoder: nn.Module,
                  decoder: nn.Module,
                  lr: int = 1e-4,

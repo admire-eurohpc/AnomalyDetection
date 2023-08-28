@@ -111,5 +111,5 @@ def plot_recon_error_agg(reconstruction_errors: list,
     fig = make_subplots(rows=1, cols=1)
     fig.append_trace(go.Scatter(x = time_axis, y = reconstruction_errors, mode="lines", name=hostnames), row=1, col=1)
 
-    fig.write_html(os.path.join(savedir, 'plotly_reconstruction_aggregated.html'))
-    fig.write_image(os.path.join(savedir, 'plotly_reconstruction_aggregated.png'))
+    fig.write_html(os.path.join(savedir, hostnames + '_aggregated.html'))
+    fig.write_image(os.path.join(savedir, hostnames + '_aggregated.png'))
