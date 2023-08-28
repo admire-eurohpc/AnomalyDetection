@@ -71,8 +71,8 @@ if __name__ == "__main__":
     device = torch.device('cuda:0' if use_cuda else 'cpu')
     accelerator = 'gpu' if use_cuda else 'cpu'
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
-    trainer_kwargs = {'accelerator': 'gpu', 'devices' : 1, 'strategy' : 'auto'} if use_cuda else {'accelerator': 'cpu'}
     
+
     # Setup data generator class and load it into a pytorch dataloader
     dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_DATA_DIR}/train/", 
                                 normalize=True, 
@@ -110,11 +110,13 @@ if __name__ == "__main__":
     nodes = d.shape[1]
     n_features = d.shape[2]
     win_size = d.shape[3]
+
     test_len = len(test_dataset)
     logging.debug(f"test input_shape: {test_len}")
 
-    logging.debug(f"input_shape: {input_shape[1:]}")
+    logging.debug(f"input_shape: {input_shape}")
     logging.debug(f'batch: {batch}, nodes: {nodes}, number of features: {n_features}, window size: {win_size}')
+
     
     # Log hyperparameters for tensorboard
     logger.log_hyperparams({
