@@ -119,15 +119,14 @@ class CNN_LSTM_decoder(nn.Module):
         self.cnn_decoder = nn.Sequential(*cnn_modules)
 
     def forward(self, x, seq_len):
-        print("decoder: ", x.size(), seq_len)
-        x = x.repeat(seq_len, 1) #TODO reshape zamiast repeat to spróbowania
+        x = x.unsqueeze(1)
+        x = x.repeat(1, seq_len, 1)
         
         for index, layer in enumerate(self.layers):
-            print("decoder: ", x.size())
             x, (h_n, c_n) = layer(x)
 
             if self.h_activ and index < self.num_layers - 1:
                 x = self.h_activ(x)
-
-        lstm_decoding = torch.mm(x.squeeze(), self.dense_matrix)
-        return self.cnn_decoder(lstm_decoding)
+        
+        lstm_decoding = torch.matmul(x.squeeze(), self.dense_matrix)
+        return self.cnn_decoder(lstm_decoding.squeeze())

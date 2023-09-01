@@ -128,12 +128,11 @@ class CNN_LSTM_encoder(nn.Module):
         x = x.unsqueeze(2)
         for index, layer in enumerate(self.layers):
             x, (h_n, c_n) = layer(x)
-            print("encoder: ", index, x.size())
+            
 
             if self.h_activ and index < self.num_layers - 1:
                 x = self.h_activ(x)
             elif self.out_activ and index == self.num_layers - 1:
                 return self.out_activ(h_n).squeeze()
-            print("encoder: ", index, h_n.size())
 
         return h_n.squeeze()
