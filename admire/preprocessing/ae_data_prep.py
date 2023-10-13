@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 from typing import List, Iterator
 import pandas as pd
@@ -248,17 +249,25 @@ if __name__ == '__main__':
     # that all hosts from train data are also in test data (and vice versa)
     hosts_to_take.sort()
     
+    # Load config for train/test data
+    test_date_range_start, test_date_range_end = config['PREPROCESSING'][f'test_date_range'].split(',')
+    train_date_range_start, train_date_range_end = config['PREPROCESSING'][f'train_date_range'].split(',')
+    
     # generate test and train data
     for type in ['test', 'train']:
         
         df = raw_df.copy(deep=True)
-        
-        # Load config for train/test data
-        date_range_start, date_range_end = config['PREPROCESSING'][f'{type}_date_range'].split(',')
-        
+         
         # Remove data before start date and after end date
-        df = remove_data_between_dates(df, '2000-01-01', date_range_start) 
-        df = remove_data_between_dates(df, date_range_end, '2050-01-01') 
+        if type == 'test':
+            df = remove_data_between_dates(df, '2000-01-01', test_date_range_start) 
+            df = remove_data_between_dates(df, test_date_range_end, '2050-01-01') 
+        elif type == 'train':
+            df = remove_data_between_dates(df, '2000-01-01', train_date_range_start) 
+            df = remove_data_between_dates(df, train_date_range_end, '2050-01-01')
+        else:
+            raise ValueError(f'Unknown value{type}')
+        
         df = df.reset_index(drop=True)
 
         # Remove blacklisted date ranges
@@ -268,7 +277,18 @@ if __name__ == '__main__':
                 start, end = range.split(',')
                 df = remove_data_between_dates(df, start, end)     
                 df = df.reset_index(drop=True)    
-
+                
+        # Train data should not contain test data and vice versa
+        # Removing test data from train data prevents data leakage 
+        if type == 'train':
+            if datetime.strptime(test_date_range_start, r'%Y-%m-%d') >= datetime.strptime(train_date_range_start, r'%Y-%m-%d') and \
+                datetime.strptime(test_date_range_end, r'%Y-%m-%d') <= datetime.strptime(train_date_range_end, r'%Y-%m-%d'):
+                    
+                df = remove_data_between_dates(df, test_date_range_start, test_date_range_end)
+                df = df.reset_index(drop=True)
+                logger.warn(f"Train data contains test data!!!")
+                logger.debug("Removed test data from train data.")
+        
         logger.debug(f'After removing data {df.shape}')
 
         hosts = host_sort(df, hosts_to_take)
@@ -288,7 +308,6 @@ if __name__ == '__main__':
             # Save each host data to a separate file named after the host
             save_data(_df_host, f'{host}', os.path.join(save_data_dir, type), keep_columns=important_cols)
             
-    
     #TODO!: IMPORTANT - make sure that we take the same hosts for train and test
     # Remove hosts that are in train but not in test and vice versa because we need consistency
     _, _, train_host_names = next(os.walk(os.path.join(save_data_dir, 'train')))

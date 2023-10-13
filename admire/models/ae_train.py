@@ -21,7 +21,6 @@ from datetime import datetime
 from sequitur.models import CONV_LSTM_AE
 
 
-
 # -- Own modules --
 from ae_encoder import CNN_encoder, CNN_LSTM_encoder
 from ae_decoder import CNN_decoder, CNN_LSTM_decoder
@@ -60,9 +59,7 @@ LR = config.getfloat('TRAINING', 'LEARNING_RATE')
 SHUFFLE = config.getboolean('TRAINING', 'SHUFFLE')
 VAL_SHUFFLE = config.getboolean('TRAINING', 'VAL_SHUFFLE')
 INCLUDE_CPU_ALLOC = config.getboolean('PREPROCESSING', 'with_cpu_alloc')
-
 PROCESSED_DATA_DIR = config.get('PREPROCESSING', 'processed_data_dir')
-
 
 
 if __name__ == "__main__":
