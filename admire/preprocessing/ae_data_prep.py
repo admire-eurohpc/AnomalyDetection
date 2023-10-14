@@ -304,7 +304,11 @@ if __name__ == '__main__':
         for host in tqdm(hosts, desc='Filling missing data'):
             logger.debug(f'Filling missing data for {host}')
             # Fill missing data for each host
-            _df_host = fill_missing_data(df[df['hostname'] == host], date_range_start, date_range_end, host, type)
+            if type == 'test':
+                _df_host = fill_missing_data(df[df['hostname'] == host], test_date_range_start, test_date_range_end, host, type)
+            if type == 'train':
+                _df_host = fill_missing_data(df[df['hostname'] == host], train_date_range_start, train_date_range_end, host, type)
+            
             # Save each host data to a separate file named after the host
             save_data(_df_host, f'{host}', os.path.join(save_data_dir, type), keep_columns=important_cols)
             
