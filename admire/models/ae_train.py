@@ -14,6 +14,8 @@ from torchsummary import summary
 import lightning as L
 import lightning.pytorch as pl
 from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.profilers import SimpleProfiler
+from lightning.pytorch.accelerators import CPUAccelerator
 
 # -- Other Imports --
 from scipy.stats import zscore
@@ -68,7 +70,7 @@ if __name__ == "__main__":
     use_cuda = torch.cuda.is_available()
     device = torch.device('cuda:0' if use_cuda else 'cpu')
     accelerator = 'gpu' if use_cuda else 'cpu'
-    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
+    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {'num_workers': CPUAccelerator().auto_device_count(), 'pin_memory': False}
     
 
     # Setup data generator class and load it into a pytorch dataloader
@@ -76,31 +78,14 @@ if __name__ == "__main__":
                                 normalize=True, 
                                 window_size=WINDOW_SIZE, 
                                 slide_length=TRAIN_SLIDE)
-    train_set, val_set = torch.utils.data.random_split(dataset, [0.8, 0.2])
-
-
+    
     train_loader = DataLoader(
-        dataset=train_set,
+        dataset=dataset,
         batch_size=BATCH_SIZE,
         shuffle=SHUFFLE,
         drop_last=True,
         **kwargs,
         )
-    val_loader = DataLoader(
-        dataset=val_set,
-        batch_size=BATCH_SIZE,
-        shuffle=VAL_SHUFFLE,
-        drop_last=True,
-        **kwargs,
-        )
-    
-    # Setup test data
-    test_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_DATA_DIR}/test/", 
-                                     normalize=True, 
-                                     external_transform=dataset.get_transform(), # Use same transform as for training
-                                     window_size=WINDOW_SIZE, 
-                                     slide_length=TEST_SLIDE)
-    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False, **kwargs)
     
     # Get input size and shapes
     d = next(iter(train_loader))
@@ -110,13 +95,9 @@ if __name__ == "__main__":
     n_features = d.shape[2]
     win_size = d.shape[3]
 
-    test_len = len(test_dataset)
-    logging.debug(f"test input_shape: {test_len}")
-
     logging.debug(f"input_shape: {input_shape}")
     logging.debug(f'batch: {batch}, nodes: {nodes}, number of features: {n_features}, window size: {win_size}')
 
-    
     # Log hyperparameters for tensorboard
     logger.log_hyperparams({
         'batch_size': BATCH_SIZE,
@@ -134,11 +115,11 @@ if __name__ == "__main__":
     # Init the lightning autoencoder
     cnn_encoder = CNN_encoder(kernel_size=10, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
     cnn_decoder = CNN_decoder(latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
-    autoencoder = LitAutoEncoder(cnn_encoder, cnn_decoder)
+    autoencoder = LitAutoEncoder(cnn_encoder, cnn_decoder, monitor='train_loss', monitor_mode='min')
 
     # Add early stopping
     early_stop_callback = pl.callbacks.EarlyStopping(
-        monitor="val_loss", 
+        monitor="train_loss", 
         min_delta=0.0001, 
         patience=5, 
         verbose=True, 
@@ -147,11 +128,12 @@ if __name__ == "__main__":
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         save_top_k=config.getint('TRAINING', 'SAVE_TOP_K'),
         verbose=True, 
-        monitor="val_loss", 
+        monitor="train_loss", 
         mode="min"
     )
     lr_callback = pl.callbacks.LearningRateMonitor(logging_interval = 'epoch')
 
+    profiler = SimpleProfiler()
 
     logging.debug(f'Autoencoder Summary: {autoencoder}')
     trainer = pl.Trainer(
@@ -164,12 +146,13 @@ if __name__ == "__main__":
             ],   
         enable_checkpointing=config.getboolean('TRAINING', 'ENABLE_CHECKPOINTING'),
         accelerator=accelerator,
-        devices=1, strategy="auto",
+        devices="auto", 
+        strategy="auto",
+        profiler=profiler,
         )
     trainer.fit(
         model=autoencoder, 
-        train_dataloaders=train_loader,
-        val_dataloaders=val_loader
+        train_dataloaders=train_loader
         )
 
     logging.debug(os.path.join(logger.save_dir, logger.name, logger.version, "checkpoints"))
@@ -183,6 +166,17 @@ if __name__ == "__main__":
                                 map_location=device
                                 )
     # ----- TEST ----- #
+
+    # Setup test data
+    test_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_DATA_DIR}/test/", 
+                                     normalize=True, 
+                                     external_transform=dataset.get_transform(), # Use same transform as for training
+                                     window_size=WINDOW_SIZE, 
+                                     slide_length=TEST_SLIDE)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False, **kwargs)
+    
+    test_len = len(test_dataset)
+    logging.debug(f"test input_shape: {test_len}")
 
     # Now test the model on february data
     # Run the model on the entire test set and report reconstruction error to tensorboard
@@ -254,7 +248,6 @@ if __name__ == "__main__":
     #     write=True,
     #     show=False,
     # )
-
-
+    
     logging.debug(f"Finished")
     
