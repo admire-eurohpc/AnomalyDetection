@@ -59,6 +59,8 @@ SHUFFLE = config.getboolean('TRAINING', 'SHUFFLE')
 VAL_SHUFFLE = config.getboolean('TRAINING', 'VAL_SHUFFLE')
 INCLUDE_CPU_ALLOC = config.getboolean('PREPROCESSING', 'with_cpu_alloc')
 PROCESSED_DATA_DIR = config.get('PREPROCESSING', 'processed_data_dir')
+ENCODER_LAYERS = config.get('TRAINING', 'ENCODER_LAYERS')
+DECODER_LAYERS = config.get('TRAINING', 'DECODER_LAYERS')
 
 
 if __name__ == "__main__":
@@ -124,6 +126,8 @@ if __name__ == "__main__":
         'train_slide': TRAIN_SLIDE,
         'test_slide': TEST_SLIDE,
         'latent_dim': LATENT_DIM,
+        'encoder_layers': ENCODER_LAYERS,
+        'decoder_layers': DECODER_LAYERS,
         'seed': SEED,
     })
 
@@ -135,9 +139,9 @@ if __name__ == "__main__":
     # Add early stopping
     early_stop_callback = pl.callbacks.EarlyStopping(
         monitor="val_loss", 
-        min_delta=0.00, 
-        patience=10, 
-        verbose=False, 
+        min_delta=0.0001, 
+        patience=5, 
+        verbose=True, 
         mode="min"
     )
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
