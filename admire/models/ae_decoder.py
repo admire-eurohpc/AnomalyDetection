@@ -38,7 +38,12 @@ class Decoder(nn.Module):
 
    
 class CNN_decoder(nn.Module):
-    def __init__(self, latent_dim: int, cpu_alloc: bool):
+    def __init__(self, 
+                latent_dim: int, 
+                cpu_alloc: bool,
+                channels: list = [32, 16, 8],
+                kernel_size: int = 3, 
+                ):
         """
         Args:
            num_input_channels : Number of input channels 3 without cpus_alloc, 4 with this feature
@@ -48,21 +53,40 @@ class CNN_decoder(nn.Module):
         """
         super().__init__()
         modules = []
-        channels = [32, 8, 1]
 
-        if cpu_alloc:
-            kernel_size2d = (4,3)
-        else:
-            kernel_size2d = 3
-        modules.append(nn.Linear(latent_dim, latent_dim*40)) #latent_dim 4
-        modules.append(nn.Unflatten(1, (channels[0], 5))) #160 into 32x5
-        modules.append(nn.ConvTranspose1d(channels[0], channels[1], kernel_size=4, stride = 4)) #input (32, 5) output (32,20)
-        modules.append(nn.Unflatten(2, (1, 20)))
-        modules.append(nn.ConvTranspose2d(channels[1], channels[2], kernel_size=kernel_size2d, stride =3))
+        if cpu_alloc: input_channels = 4
+        else: input_channels = 3
+        
+        # input = (N, latent_dim), output = (N, latent_dim * channels[0])
+        modules.append(nn.Linear(latent_dim, latent_dim * channels[0])) 
         modules.append(nn.ReLU())
-
-
+        
+        # reshape to (N, channels[0], latent_dim)
+        shape_unflattened = (channels[0], latent_dim)
+        # input = (N, latent_dim * channels[0]), output = (N, shape_unflattened[0], shape_unflattened[1])
+        modules.append(nn.Unflatten(dim=1, unflattened_size=shape_unflattened)) 
+        
+        # L_out = (L_in - 1) * stride - 2 * padding + dilliation * (kernel_size-1) + output_padding + 1
+        modules.append(nn.ConvTranspose1d(channels[0], channels[1], kernel_size=4, padding=3, stride=2))
+        modules.append(nn.ReLU())
+        
+        # L_out = [L_in + 2*padding - dilation*(kernel_size-1) - 1] / stride + 1
+        modules.append(nn.Conv1d(channels[1], channels[2], kernel_size=kernel_size, padding='same'))
+        modules.append(nn.ReLU())
+        
+        # L_out = [L_in + 2*padding - dilation*(kernel_size-1) - 1] / stride + 1    
+        modules.append(nn.Conv1d(channels[2], input_channels, kernel_size=kernel_size, padding='same'))
+        modules.append(nn.ReLU())
+        
+   
         self.model = nn.Sequential(*modules)
+        
+        # for channels = [32, 16, 8] and kernel_size = 3 and latent_dim = 32 and input_channels = 4
+        # Linear: (N, 32) -> (N, 32 * 32) = (N, 1024)
+        # Unflatten: (N, 1024) -> (N, 32, 32)
+        # ConvTranspose1d: (N, 32, 32) -> (N, 16, 60)
+        # Conv1d: (N, 16, 60) -> (N, 8, 60)
+        # Conv1d: (N, 8, 60) -> (N, 4, 60)
     
     def forward(self, x):
         #logging.debug(f'Decoder inference shape: {x.shape}')

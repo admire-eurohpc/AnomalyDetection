@@ -35,9 +35,12 @@ config = configparser.ConfigParser()
 config.read('config.ini')
 
 _tmp_name = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
-logger = TensorBoardLogger(save_dir="lightning_logs", name="ae", version=f'{_tmp_name}')
+tensorboard_logging_path = config.get('TRAINING', 'tensorboard_logging_path')
+img_save_dirname = config.get('TRAINING', 'image_save_path')
 
-image_save_path = os.path.join('lightning_logs', 'ae', f'{_tmp_name}')
+logger = TensorBoardLogger(save_dir=tensorboard_logging_path, name="AE_CNN_ONE_NODE", version=f'{_tmp_name}')
+image_save_path = os.path.join(logger.log_dir, img_save_dirname)
+
 if not os.path.exists(image_save_path):
     os.makedirs(image_save_path)
 
@@ -91,9 +94,9 @@ if __name__ == "__main__":
     d = next(iter(train_loader))
     input_shape = d.shape
     batch = d.shape[0]
-    nodes = d.shape[1]
-    n_features = d.shape[2]
-    win_size = d.shape[3]
+    nodes = None
+    n_features = d.shape[1]
+    win_size = d.shape[2]
 
     logging.debug(f"input_shape: {input_shape}")
     logging.debug(f'batch: {batch}, nodes: {nodes}, number of features: {n_features}, window size: {win_size}')
@@ -113,8 +116,8 @@ if __name__ == "__main__":
     })
 
     # Init the lightning autoencoder
-    cnn_encoder = CNN_encoder(kernel_size=10, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
-    cnn_decoder = CNN_decoder(latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
+    cnn_encoder = CNN_encoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
+    cnn_decoder = CNN_decoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
     autoencoder = LitAutoEncoder(cnn_encoder, cnn_decoder, monitor='train_loss', monitor_mode='min')
 
     # Add early stopping
@@ -207,6 +210,8 @@ if __name__ == "__main__":
     test_recon_mae_np = np.reshape(test_recon_mae_stripped, (NODES_COUNT, node_len))
     test_recon_mae_list = test_recon_mae_np.tolist()
     agg_recon_err = np.mean(test_recon_mae_np, axis=0)
+    
+    logger.log_metrics({'test_loss': np.mean(agg_recon_err)}, step=0)
 
     test_date_range = test_dataset.get_dates_range()
     test_date_range = pd.date_range(start=test_date_range['start'], end=test_date_range['end'], freq=f'{TEST_SLIDE}min', tz='Europe/Warsaw') # TODO set frequency dynamically?

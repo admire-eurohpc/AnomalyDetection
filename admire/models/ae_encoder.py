@@ -36,7 +36,14 @@ class Encoder(nn.Module):
 
 
 class CNN_encoder(nn.Module):
-    def __init__(self, kernel_size: int, latent_dim: int = 4, cpu_alloc: bool = False):
+    def __init__(self, 
+                kernel_size: int = 3, 
+                latent_dim: int = 32, 
+                cpu_alloc: bool = False,
+                window_size: int = 60,
+                batch_size: int = 1,
+                channels: list = [16, 32, 64],
+                ):
         """
         Args:
            num_input_channels : Number of input channels 3 without cpus_alloc, 4 with this feature
@@ -45,30 +52,32 @@ class CNN_encoder(nn.Module):
            act_fn : Activation function used throughout the encoder network
         """
         super().__init__()
-        #assuming window size of 60
-        if cpu_alloc:
-            kernel_size2d = (4, kernel_size)
-            maxpool_size2d = (4,3)
-        else:
-            kernel_size2d = (3, kernel_size)
-            maxpool_size2d = 3
+        
+        if cpu_alloc: input_channels = 4
+        else: input_channels = 3
         
         modules = []
-        channels = [1, 8, 32]
-        modules.append(nn.Conv2d(channels[0], channels[0], kernel_size=kernel_size2d, padding='same')) #input = (200x3x60), output = (200, 3, 60)
+        modules.append(nn.Conv1d(input_channels, channels[0], kernel_size=kernel_size, padding='same')) #input = (N x 4 x 60), output = (N x channel[0] x 60)
         modules.append(nn.ReLU())
-        modules.append(nn.Conv2d(channels[0], channels[1], kernel_size=kernel_size2d, padding='same')) #input = (200x3x60), output = (400, 3, 60)
+        modules.append(nn.AvgPool1d(3)) # input = (N x channel[0] x 60), output = (N x channel[0] x 20)
+        modules.append(nn.Dropout(0.2))
+        
+        modules.append(nn.Conv1d(channels[0], channels[1], kernel_size=kernel_size, padding='same'))  # input = (N x channel[0] x 20), output = (N x channel[1] x 20)
         modules.append(nn.ReLU())
-        modules.append(nn.MaxPool2d(kernel_size=(maxpool_size2d))) #input = (400x3x60), output = (400, 1, 20)
-        modules.append(nn.Flatten(start_dim=2))
-        modules.append(nn.Conv1d(channels[1], channels[2], kernel_size=kernel_size, padding='same'))
+        modules.append(nn.AvgPool1d(3)) # input = (N x channel[1] x 20), output = (N x channel[1] x 6)
+        modules.append(nn.Dropout(0.2))
+        
+        modules.append(nn.Conv1d(channels[1], channels[2], kernel_size=kernel_size, padding='same')) # input = (N x channel[1] x 6), output = (N x channel[2] x 6)
         modules.append(nn.ReLU())
-        modules.append(nn.MaxPool1d(4))
-        modules.append(nn.Flatten())
-        modules.append(nn.Linear(latent_dim*40, latent_dim)) # latent dim 4
+        modules.append(nn.AvgPool1d(3)) # input = (N x channel[2] x 6), output = (N x channel[2] x 2)
+        modules.append(nn.Dropout(0.2))
+        
+        modules.append(nn.Flatten(start_dim=1)) # input = (N x channel[2] x 2), output = (N x channel[2] * 2)
+        
+        modules.append(nn.Linear(channels[-1] * 2, latent_dim)) # latent space = (N x latent_dim)
 
         self.model = nn.Sequential(*modules)
 
     def forward(self, x):
-        #logging.debug(f'Encoder inference shape: {x.shape}')
+        # logging.debug(f'Encoder inference shape: {x.shape}')
         return self.model(x)
