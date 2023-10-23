@@ -102,17 +102,16 @@ class CNN_LSTM_decoder(nn.Module):
         
         #CNN decoder
         cnn_modules = []
-        channels = [16, 8, 1]
+        channels = [16, 8]
 
-        if cpu_alloc:
-            kernel_size2d = (4,3)
-        else:
-            kernel_size2d = 3
+        if cpu_alloc: input_channels = 4
+        else: input_channels = 3
+
         cnn_modules.append(nn.Linear(40, 80)) #latent_dim 4
         cnn_modules.append(nn.Unflatten(1, (channels[0], 5))) #80 into 16x5
-        cnn_modules.append(nn.ConvTranspose1d(channels[0], channels[1], kernel_size=4, stride = 4)) #input (16, 5) output (16,20)
-        cnn_modules.append(nn.Unflatten(2, (1, 20)))  #input (16, 20) output (16,1,20)
-        cnn_modules.append(nn.ConvTranspose2d(channels[1], channels[2], kernel_size=kernel_size2d, stride =3))
+        cnn_modules.append(nn.ConvTranspose1d(channels[0], channels[1], kernel_size=4, stride = 4)) #input (16, 5) output (8,20)
+        cnn_modules.append(nn.ReLU())
+        cnn_modules.append(nn.ConvTranspose1d(channels[1], input_channels, kernel_size=3, stride =3))
         cnn_modules.append(nn.ReLU())
 
 

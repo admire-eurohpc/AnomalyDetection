@@ -1,3 +1,4 @@
+import time
 import logging
 import torch
 import torch.nn as nn
@@ -85,25 +86,23 @@ class CNN_LSTM_encoder(nn.Module):
                  cpu_alloc: bool=True,) -> None:
         super().__init__()
 
-        if cpu_alloc:
-            kernel_size2d = (4, kernel_size)
-            maxpool_size2d = (4,3)
-        else:
-            kernel_size2d = (3, kernel_size)
-            maxpool_size2d = 3
+        if cpu_alloc: input_channels = 4
+        else: input_channels = 3
+
         
         #CNN encoder
         cnn_modules = []
-        channels = [1, 8, 16]
-        cnn_modules.append(nn.Conv2d(channels[0], channels[0], kernel_size=kernel_size2d, padding='same')) #input = (batch, 1, 4, 60), output = (batch, 1, 4, 60)
+        channels = [8, 16]
+        cnn_modules.append(nn.Conv1d(input_channels, channels[0], kernel_size=kernel_size, padding='same')) #input = (batch x channel[0] x 60), output = (batch x channel[1] x 60)
         cnn_modules.append(nn.ReLU())
-        cnn_modules.append(nn.Conv2d(channels[0], channels[1], kernel_size=kernel_size2d, padding='same')) #input = (batch, 1, 4, 60), output = (batch, 8, 4, 60)
+        cnn_modules.append(nn.AvgPool1d(3)) # input = (N x channel[0] x 60), output = (N x channel[0] x 20)
+        cnn_modules.append(nn.Dropout(0.2))
+
+        cnn_modules.append(nn.Conv1d(channels[0], channels[1], kernel_size=kernel_size, padding='same')) #input = (batch x channel[1] x 20), output = (batch x channel[2] x 20)
         cnn_modules.append(nn.ReLU())
-        cnn_modules.append(nn.MaxPool2d(kernel_size=(maxpool_size2d))) #input = (batch, 8, 4, 60 ), output = (batch, 8, 1, 20)
-        cnn_modules.append(nn.Flatten(start_dim=2)) #input = (batch, 8, 1, 20 ), output = (batch, 8, 20)
-        cnn_modules.append(nn.Conv1d(channels[1], channels[2], kernel_size=kernel_size, padding='same')) #input = (batch, 8, 20 ), output = (batch, 16, 20)
-        cnn_modules.append(nn.ReLU())
-        cnn_modules.append(nn.MaxPool1d(4)) #input = (batch, 16, 20 ), output = (batch, 16, 5)
+        cnn_modules.append(nn.AvgPool1d(4)) # input = (N x channel[2] x 20), output = (N x channel[2] x 5)
+        cnn_modules.append(nn.Dropout(0.2))
+
         cnn_modules.append(nn.Flatten())
         cnn_modules.append(nn.Linear(80, 40)) # cnn_encoding_len 40
 
@@ -124,15 +123,20 @@ class CNN_LSTM_encoder(nn.Module):
         self.h_activ, self.out_activ = nn.Sigmoid(), nn.Tanh()
         
     def forward(self, x):
+        start_1 = time.time()
         x = self.cnn_encoder(x)
+        end_1 = time.time()
+        print(end_1-start_1)
         x = x.unsqueeze(2)
+        start_2 = time.time()
         for index, layer in enumerate(self.layers):
             x, (h_n, c_n) = layer(x)
             
-
             if self.h_activ and index < self.num_layers - 1:
                 x = self.h_activ(x)
             elif self.out_activ and index == self.num_layers - 1:
+                end_2 = time.time()
+                print("CNN time:", end_1-start_1,"LSTM_time : ", end_2-start_2)
                 return self.out_activ(h_n).squeeze()
-
+        
         return h_n.squeeze()

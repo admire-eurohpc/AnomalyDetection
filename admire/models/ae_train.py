@@ -94,12 +94,11 @@ if __name__ == "__main__":
     d = next(iter(train_loader))
     input_shape = d.shape
     batch = d.shape[0]
-    nodes = d.shape[1]
-    n_features = d.shape[2]
-    win_size = d.shape[3]
+    n_features = d.shape[1]
+    win_size = d.shape[2]
 
     logging.debug(f"input_shape: {input_shape}")
-    logging.debug(f'batch: {batch}, nodes: {nodes}, number of features: {n_features}, window size: {win_size}')
+    logging.debug(f'batch: {batch}, number of features: {n_features}, window size: {win_size}')
 
     
     # Log hyperparameters for tensorboard
