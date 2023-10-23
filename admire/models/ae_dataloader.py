@@ -97,7 +97,8 @@ class TimeSeriesDataset(Dataset):
                 
         # It is important to convert to float32, otherwise pytorch will complain
         self.time_series = self.time_series.astype(np.float32)
-        self.time_series = np.reshape(self.time_series, (self.time_series.shape[1], self.time_series.shape[0], self.time_series.shape[2]))
+        # Drop unused channel of N nodes
+        self.time_series = np.reshape(self.time_series, (self.time_series.shape[0], self.time_series.shape[2]))
         
         logger.debug(f"Time series shape: {self.time_series.shape}")
 
@@ -106,11 +107,11 @@ class TimeSeriesDataset(Dataset):
         '''
         Returns the number of windows in the time series given the window size and slide length
         '''
-        return ((self.time_series.shape[2] - self.window_size)// self.slide_length) + 1 # TODO: Check this thoroughly
+        return ((self.time_series.shape[1] - self.window_size)// self.slide_length) + 1 # TODO: Check this thoroughly
 
     def __getitem__(self, idx): 
         start = idx * self.slide_length # Each window starts at a multiple of the slide length
-        ts = self.time_series[:, :, start:start+self.window_size] # Get the window
+        ts = self.time_series[ :, start:start+self.window_size] # Get the window
         return torch.Tensor(ts)
     
     def get_time_series(self):
@@ -123,18 +124,18 @@ class TimeSeriesDataset(Dataset):
     def get_node_len(self):
         '''Returns the node length adjusted to dataloader scenario (without final N samples) 
          since we can't reconstruct N min window depending on less than N samples'''
-        return ((self.time_series.shape[2]//self.nodes_count - self.window_size)// self.slide_length) + 1
+        return ((self.time_series.shape[1]//self.nodes_count - self.window_size)// self.slide_length) + 1
     
     def get_node_full_len(self):
         '''Returns the full node length including last N samples'''
-        return self.time_series.shape[2]//self.nodes_count 
+        return self.time_series.shape[1]//self.nodes_count 
     
     def get_input_layer_size_flattened(self):
-        return self.time_series.shape[1] * self.time_series.shape[2] * self.window_size
+        return self.time_series.shape[0] * self.time_series.shape[1] * self.window_size
     
     def get_input_layer_shape(self):
         '''(n_features x n_nodes x n_time_steps)'''
-        return self.time_series.shape[0], self.time_series.shape[1], self.window_size
+        return self.time_series.shape[0], self.window_size
     
     def get_transform(self):
         '''Returns the transform object used to normalize the data'''
