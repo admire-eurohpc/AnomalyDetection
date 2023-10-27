@@ -8,6 +8,7 @@ import tqdm
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from scipy.stats import zscore
+from lightning.pytorch.accelerators import CPUAccelerator
 import configparser
 
 from ae_encoder import CNN_encoder
@@ -23,9 +24,13 @@ PROCESSED_PATH = config.get('PREPROCESSING', 'processed_data_dir')
 INCLUDE_CPU_ALLOC = config.getboolean('PREPROCESSING', 'with_cpu_alloc')
 LOGS_PATH = config.get('EVALUATION', 'logs_path')
 NODES_COUNT = config.getint('PREPROCESSING', 'nodes_count_to_process')
+TEST_DATES_RANGE = config.get('PREPROCESSING', 'test_date_range')
 
 path = os.path.join(os.getcwd(), LOGS_PATH, 'checkpoints')
-print(os.path.exists(path))
+save_eval_path = os.path.join(os.getcwd(), LOGS_PATH, f'eval-{TEST_DATES_RANGE.split(",")}')
+
+if not os.path.exists(save_eval_path):
+    os.makedirs(save_eval_path)
 
 filenames = os.walk(path).__next__()[2] # get any checkpoint
 last_epoch_idx = np.array([int(i.split('-')[0].split('=')[1]) for i in filenames]).argmax()
@@ -44,12 +49,14 @@ LATENT_DIM = params['latent_dim']
 TEST_SLIDE = params['test_slide']
 WINDOW_SIZE = params['window_size']
 TRAIN_SLIDE = params['train_slide']
+ENCODER_LAYERS = eval(params['encoder_layers'])
+DECODER_LAYERS = eval(params['decoder_layers'])
 
 #cuda not required for inference on batch = 1
 #use_cuda = torch.cuda.is_available()
 use_cuda=False
 device = torch.device('cuda:0' if use_cuda else 'cpu')
-kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
+kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {'num_workers': CPUAccelerator().auto_device_count(), 'pin_memory': False}
 
 train_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_PATH}/train/", 
                                 normalize=True, 
@@ -67,8 +74,8 @@ test_len = len(test_dataset)
 d = next(iter(test_dataloader))
 input_shape = d.shape
 
-cnn_encoder = CNN_encoder(kernel_size=10, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
-cnn_decoder = CNN_decoder(latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
+cnn_encoder = CNN_encoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=ENCODER_LAYERS)
+cnn_decoder = CNN_decoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=DECODER_LAYERS)
 
 autoencoder = LitAutoEncoder.load_from_checkpoint(
                             checkpoint, 
@@ -103,6 +110,8 @@ for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test recon
  are processed together with samples from x+1 node resulting in high reconstruction errors on the beginning and the end of test_set)
  On training set this is also present but considering vast amount of samples in each node the impact is insignificant'''
 
+# ----- RECONSTRUCTION ERROR ----- #
+
 test_recon_mae_stripped = []
 for i in range(NODES_COUNT):
     test_recon_mae_stripped.append(test_recon_mae[(i*full_node_len): (node_len*(i+1)+(full_node_len-node_len)*i)])
@@ -119,15 +128,87 @@ logging.debug(f'Test len: {len(test_dataloader)}, Dates len: {len(test_date_rang
 
 hostnames = test_dataset.get_filenames()
 
+# Save reconstruction error to parquet
+try:
+    print(test_recon_mae_np.shape)
+    print(test_date_range.shape)
+    print(len(hostnames))
+    stats_df = pd.DataFrame(test_recon_mae_np, index=hostnames, columns=test_date_range[0:len(test_recon_mae_np[0])].astype(str))
+    stats_df.to_parquet(os.path.join(save_eval_path, 'recon_error.parquet'))
+except:
+    print('Error while saving recon_error to parquet')
+
 # Display the reconstruction error over time manually
 logging.debug(f"Plotting reconstruction error over time")
 
-plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=LOGS_PATH)
-plot_recon_error_agg(reconstruction_errors = agg_recon_err, time_axis = test_date_range, hostnames = 'mean recon_error', savedir=LOGS_PATH)
+plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, 
+                           time_axis = test_date_range, 
+                           n_nodes = 200, 
+                           hostnames = hostnames, 
+                           savedir=save_eval_path
+                           )
+
+plot_recon_error_agg(reconstruction_errors = agg_recon_err, 
+                     time_axis = test_date_range, 
+                     hostnames = 'mean recon_error', 
+                     savedir=save_eval_path
+                     )
+
+
+# ----- Z-SCORES ----- #
 
 #calculate threshold metric z-score for anomaly evaluation
 zscores = np.zeros((NODES_COUNT, node_len))
 for i in range(node_len):
     zscores[:, i] = (zscore(test_recon_mae_np[:, i]))
+    
+    
+plot_recon_error_each_node(reconstruction_errors = zscores, 
+                           time_axis = test_date_range, 
+                           n_nodes = 200, 
+                           hostnames = hostnames, 
+                           savedir=save_eval_path, 
+                           out_name = 'zscores_all'
+                           )
+plot_recon_error_agg(reconstruction_errors = np.mean(zscores, axis=0), 
+                     time_axis = test_date_range, 
+                     hostnames = 'mean zscore', 
+                     savedir=save_eval_path
+                     )    
 
-plot_recon_error_each_node(reconstruction_errors = zscores, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=LOGS_PATH, out_name = 'zscores')
+# Wrapping this in try-except because it sometimes fails to save the parquet file and I don't know why
+try: 
+    print(zscores.shape)
+    print(test_date_range.shape)
+    print(len(hostnames))    
+    stats_df = pd.DataFrame(zscores, index=hostnames, columns=test_date_range[0:len(zscores[0])].astype(str))
+    stats_df.to_parquet(os.path.join(save_eval_path, 'zscores.parquet'))
+except:
+    print('Error while saving zscores to parquet')
+
+# 3 standard deviations from mean
+z_thresholds = [1, 2, 3]
+for z_threshold in z_thresholds:
+    zscores_thresholded = zscores.copy()
+    zscores_thresholded[zscores < z_threshold] = 0
+    zscores_thresholded[zscores >= z_threshold] = 1
+
+    print(zscores_thresholded.shape)
+
+    plot_recon_error_each_node(reconstruction_errors = zscores_thresholded, 
+                            time_axis = test_date_range, 
+                            n_nodes = 200, 
+                            hostnames = hostnames, 
+                            savedir=save_eval_path, 
+                            out_name = f'zscores_thresholded_all (s={z_threshold})'
+                            )
+
+    # Display the sum of thresholded z-scores over time  
+    logging.debug(f"Plotting thresholded z-scores over time")
+    s = np.sum(zscores_thresholded, axis=0)
+    plot_recon_error_agg(reconstruction_errors = s, 
+                        time_axis = test_date_range, 
+                        hostnames = f'sum of thresholded (s={z_threshold}) zscores', 
+                        savedir=save_eval_path
+                        )
+
