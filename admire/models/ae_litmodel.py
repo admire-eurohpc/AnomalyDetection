@@ -12,7 +12,7 @@ class LitAutoEncoder(pl.LightningModule):
                 encoder: nn.Module,
                 decoder: nn.Module,
                 lr: int = 1e-4,
-                monitor: str = 'val_loss',
+                monitor: str = 'train_loss',
                 monitor_mode: str = 'min',
                 ):
         super().__init__()
@@ -66,14 +66,6 @@ class LitAutoEncoder(pl.LightningModule):
         self.log('train_mape', self._get_reconstruction_mape(x, x_hat))
         return loss
     
-    def validation_step(self, batch, batch_idx):
-        x = batch
-        x_hat = self.forward(x)
-        loss = self._get_reconstruction_loss(x, x_hat)
-        self.log('val_loss', loss)
-        self.log('val_mae', self._get_reconstruction_mae(x, x_hat))
-        self.log('val_mape', self._get_reconstruction_mape(x, x_hat))
-        #self.log('val_r2', self._get_reconstruction_r2(x, x_hat))
     
     def test_step(self, batch, batch_idx):
         x = batch

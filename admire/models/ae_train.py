@@ -48,7 +48,7 @@ SEED = config.getint('TRAINING', 'SEED')
 L.seed_everything(SEED)
 
 # Ensure that all operations are deterministic on GPU (if used) for reproducibility
-torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
 
 BATCH_SIZE = config.getint('TRAINING', 'BATCH_SIZE')
@@ -117,8 +117,8 @@ if __name__ == "__main__":
 
     # Init the lightning autoencoder
 
-    cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=2, h_lstm_chan=[2,4], cpu_alloc=True)
-    cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=2, lstm_out_dim =1, h_lstm_chan=[2,4], cpu_alloc=True)
+    cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=48, h_lstm_chan=[96], cpu_alloc=True)
+    cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=48, lstm_out_dim =1, h_lstm_chan=[96], cpu_alloc=True)
     lstm_conv_autoencoder = LitAutoEncoder(cnn_lstm_encoder, cnn_lstm_decoder)
 
     # Add early stopping
@@ -150,9 +150,9 @@ if __name__ == "__main__":
             ],   
         enable_checkpointing=config.getboolean('TRAINING', 'ENABLE_CHECKPOINTING'),
         accelerator=accelerator,
-        devices="auto", 
-        strategy="auto", 
-        profiler=profiler,
+        devices=1, 
+        #strategy="auto", 
+        #profiler=profiler,
         )
     trainer.fit(
         model=lstm_conv_autoencoder, 
@@ -197,7 +197,6 @@ if __name__ == "__main__":
     # Run evaluation on test set
     for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=test_len):
         batch = batch.to(device)
-        print(batch.size())
         err = torch.mean(torch.abs(batch - lstm_conv_autoencoder.decoder(lstm_conv_autoencoder.encoder(batch), batch.shape[0])))
         err_detached = err.cpu().numpy()
         test_recon_mae.append(err_detached)

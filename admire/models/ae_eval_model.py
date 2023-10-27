@@ -10,8 +10,8 @@ from torch.utils.data import DataLoader
 from scipy.stats import zscore
 import configparser
 
-from ae_encoder import CNN_encoder
-from ae_decoder import CNN_decoder
+from ae_encoder import CNN_encoder, CNN_LSTM_encoder
+from ae_decoder import CNN_decoder, CNN_LSTM_decoder
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
 from utils.plotting import *
@@ -25,7 +25,6 @@ LOGS_PATH = config.get('EVALUATION', 'logs_path')
 NODES_COUNT = config.getint('PREPROCESSING', 'nodes_count_to_process')
 
 path = os.path.join(os.getcwd(), LOGS_PATH, 'checkpoints')
-print(os.path.exists(path))
 
 filenames = os.walk(path).__next__()[2] # get any checkpoint
 last_epoch_idx = np.array([int(i.split('-')[0].split('=')[1]) for i in filenames]).argmax()
@@ -46,9 +45,9 @@ WINDOW_SIZE = params['window_size']
 TRAIN_SLIDE = params['train_slide']
 
 #cuda not required for inference on batch = 1
-#use_cuda = torch.cuda.is_available()
-use_cuda=False
+use_cuda = torch.cuda.is_available()
 device = torch.device('cuda:0' if use_cuda else 'cpu')
+print(use_cuda, device)
 kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
 train_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_PATH}/train/", 
@@ -67,13 +66,15 @@ test_len = len(test_dataset)
 d = next(iter(test_dataloader))
 input_shape = d.shape
 
-cnn_encoder = CNN_encoder(kernel_size=10, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
-cnn_decoder = CNN_decoder(latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
+cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=48, h_lstm_chan=[96], cpu_alloc=True)
+cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=48, lstm_out_dim =1, h_lstm_chan=[96], cpu_alloc=True)
+lstm_conv_autoencoder = LitAutoEncoder(cnn_lstm_encoder, cnn_lstm_decoder)
+
 
 autoencoder = LitAutoEncoder.load_from_checkpoint(
                             checkpoint, 
-                            encoder=cnn_encoder, 
-                            decoder=cnn_decoder,
+                            encoder=cnn_lstm_encoder, 
+                            decoder=cnn_lstm_decoder,
                             input_shape=input_shape,
                             latent_dim=LATENT_DIM,
                             map_location=device
@@ -95,7 +96,7 @@ full_node_len = test_dataset.get_node_full_len()
 # Run evaluation on test set
 for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=test_len):
     batch = batch.to(device)
-    err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch))))
+    err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch), 40)))
     err_detached = err.cpu().numpy()
     test_recon_mae.append(err_detached)
 

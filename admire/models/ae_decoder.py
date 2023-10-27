@@ -1,6 +1,7 @@
 import logging
 import torch
 import torch.nn as nn
+import time
 
 from sequitur.models.lstm_ae import LSTM_AE
 from sequitur.models.conv_ae import CONV_AE
@@ -95,7 +96,7 @@ class CNN_LSTM_decoder(nn.Module):
             self.layers.append(layer)
 
         self.h_activ = nn.Sigmoid()
-        self.dense_matrix = nn.Parameter(
+        self.dense_matrix = nn.Parameter( #TODO czy można traktować to jak Linear (h_lstm_chan[-1], lstm_out_dim)?
             torch.rand((layer_dims[-1], lstm_out_dim), dtype=torch.float),
             requires_grad=True
         )
@@ -120,12 +121,11 @@ class CNN_LSTM_decoder(nn.Module):
     def forward(self, x, seq_len):
         x = x.unsqueeze(1)
         x = x.repeat(1, seq_len, 1)
-        
         for index, layer in enumerate(self.layers):
             x, (h_n, c_n) = layer(x)
-
             if self.h_activ and index < self.num_layers - 1:
                 x = self.h_activ(x)
         
-        lstm_decoding = torch.matmul(x.squeeze(), self.dense_matrix)
-        return self.cnn_decoder(lstm_decoding.squeeze())
+        lstm_decoding = torch.matmul(x, self.dense_matrix)
+        cnn_decoding = self.cnn_decoder(lstm_decoding.squeeze(2))
+        return cnn_decoding

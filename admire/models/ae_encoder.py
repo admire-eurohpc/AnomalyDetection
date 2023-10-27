@@ -108,7 +108,7 @@ class CNN_LSTM_encoder(nn.Module):
 
         self.cnn_encoder = nn.Sequential(*cnn_modules)
 
-        #LSTM encoder
+        #LSTM encoder 1st approach
         layer_dims = [lstm_input_dim] + h_lstm_chan + [lstm_out_dim]
         self.num_layers = len(layer_dims) - 1
         self.layers = nn.ModuleList()
@@ -123,20 +123,12 @@ class CNN_LSTM_encoder(nn.Module):
         self.h_activ, self.out_activ = nn.Sigmoid(), nn.Tanh()
         
     def forward(self, x):
-        start_1 = time.time()
         x = self.cnn_encoder(x)
-        end_1 = time.time()
-        print(end_1-start_1)
         x = x.unsqueeze(2)
-        start_2 = time.time()
         for index, layer in enumerate(self.layers):
             x, (h_n, c_n) = layer(x)
-            
             if self.h_activ and index < self.num_layers - 1:
                 x = self.h_activ(x)
             elif self.out_activ and index == self.num_layers - 1:
-                end_2 = time.time()
-                print("CNN time:", end_1-start_1,"LSTM_time : ", end_2-start_2)
-                return self.out_activ(h_n).squeeze()
-        
+                return self.out_activ(h_n).squeeze(0)
         return h_n.squeeze()
