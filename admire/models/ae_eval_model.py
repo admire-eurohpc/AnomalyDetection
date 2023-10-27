@@ -47,7 +47,6 @@ TRAIN_SLIDE = params['train_slide']
 #cuda not required for inference on batch = 1
 use_cuda = torch.cuda.is_available()
 device = torch.device('cuda:0' if use_cuda else 'cpu')
-print(use_cuda, device)
 kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
 train_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_PATH}/train/", 

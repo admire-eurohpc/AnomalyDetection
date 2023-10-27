@@ -108,7 +108,7 @@ class CNN_LSTM_encoder(nn.Module):
 
         self.cnn_encoder = nn.Sequential(*cnn_modules)
 
-        #LSTM encoder 1st approach
+        #LSTM encoder
         layer_dims = [lstm_input_dim] + h_lstm_chan + [lstm_out_dim]
         self.num_layers = len(layer_dims) - 1
         self.layers = nn.ModuleList()
