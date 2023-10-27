@@ -67,7 +67,6 @@ PROCESSED_DATA_DIR = config.get('PREPROCESSING', 'processed_data_dir')
 ENCODER_LAYERS = config.get('TRAINING', 'ENCODER_LAYERS')
 DECODER_LAYERS = config.get('TRAINING', 'DECODER_LAYERS')
 
-
 if __name__ == "__main__":
     
     use_cuda = torch.cuda.is_available()
@@ -114,10 +113,11 @@ if __name__ == "__main__":
         'decoder_layers': DECODER_LAYERS,
         'seed': SEED,
     })
+    
 
     # Init the lightning autoencoder
-    cnn_encoder = CNN_encoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
-    cnn_decoder = CNN_decoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC)
+    cnn_encoder = CNN_encoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=eval(ENCODER_LAYERS))
+    cnn_decoder = CNN_decoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=eval(DECODER_LAYERS))
     autoencoder = LitAutoEncoder(cnn_encoder, cnn_decoder, monitor='train_loss', monitor_mode='min')
 
     # Add early stopping
