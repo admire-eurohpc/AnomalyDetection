@@ -59,7 +59,7 @@ class CNN_decoder(nn.Module):
         
         # input = (N, latent_dim), output = (N, latent_dim * channels[0])
         modules.append(nn.Linear(latent_dim, latent_dim * channels[0])) 
-        modules.append(nn.ReLU())
+        modules.append(nn.ELU())
         
         # reshape to (N, channels[0], latent_dim)
         shape_unflattened = (channels[0], latent_dim)
@@ -68,15 +68,15 @@ class CNN_decoder(nn.Module):
         
         # L_out = (L_in - 1) * stride - 2 * padding + dilliation * (kernel_size-1) + output_padding + 1
         modules.append(nn.ConvTranspose1d(channels[0], channels[1], kernel_size=4, padding=3, stride=2))
-        modules.append(nn.ReLU())
+        modules.append(nn.ELU())
         
         # L_out = [L_in + 2*padding - dilation*(kernel_size-1) - 1] / stride + 1
         modules.append(nn.Conv1d(channels[1], channels[2], kernel_size=kernel_size, padding='same'))
-        modules.append(nn.ReLU())
+        modules.append(nn.ELU())
         
         # L_out = [L_in + 2*padding - dilation*(kernel_size-1) - 1] / stride + 1    
         modules.append(nn.Conv1d(channels[2], input_channels, kernel_size=kernel_size, padding='same'))
-        modules.append(nn.ReLU())
+        modules.append(nn.ELU())
         
    
         self.model = nn.Sequential(*modules)

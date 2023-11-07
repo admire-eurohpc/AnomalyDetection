@@ -123,7 +123,7 @@ if __name__ == "__main__":
     # Add early stopping
     early_stop_callback = pl.callbacks.EarlyStopping(
         monitor="train_loss", 
-        min_delta=0.0001, 
+        min_delta=0.001, 
         patience=5, 
         verbose=True, 
         mode="min"
@@ -159,6 +159,10 @@ if __name__ == "__main__":
         )
 
     logging.debug(os.path.join(logger.save_dir, logger.name, logger.version, "checkpoints"))
+    
+    
+    # Don't run test because we run it separately in ae_eval_model.py
+    exit()
     
     autoencoder = LitAutoEncoder.load_from_checkpoint(
                                 checkpoint_path=checkpoint_callback.best_model_path,
