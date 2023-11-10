@@ -49,6 +49,43 @@ def threshold_data_by_value(data: np.ndarray, thresh_value: float | np.ndarray) 
     
     return (data > thresh_value).astype(np.int8)
 
+def batch_median(data: np.ndarray[np.float64]) -> np.ndarray[np.float64]:
+    '''
+    Calculates the median of each batch.
+    
+    Args:
+        data: data to calculate the median for, requires a 2D array (batch_size, time_steps)
+        
+    Returns:
+        median on each time step
+    '''
+    return np.median(data, axis=0)
+
+def batch_mean_only_working_nodes(data_to_transform: np.ndarray[np.float64], cpu_alloc_data: np.ndarray[np.float64]) -> np.ndarray[np.float64]:
+    '''
+    Calculates the mean of each batch using only the working nodes.
+    
+    Args:
+        data_to_transform: data to calculate the mean for, requires a 2D array (batch_size, time_steps)
+        cpu_alloc_data: data to determine the working nodes, requires a 2D array (batch_size, time_steps)
+        
+    Returns:
+        mean on each time step
+    '''
+
+    working_nodes_mask = cpu_alloc_data > 0
+    
+    ret = np.zeros(data_to_transform.shape[1])
+    
+    for i in range(data_to_transform.shape[1]):
+        mask = working_nodes_mask[:, i]
+        if mask.sum() == 0:
+            ret[i] = 0
+        else:
+            ret[i] = np.mean(data_to_transform[mask, i])
+            
+    return ret
+    
 
 if __name__ == '__main__': 
     
@@ -74,4 +111,16 @@ if __name__ == '__main__':
     # Threshold rec error by percentile
     thresholded_data = threshold_data_by_value(reconstruction_error, percentile)
     print(thresholded_data.shape)
+    
+    # Batch median
+    _batch_median = batch_median(reconstruction_error)
+    print(_batch_median.shape)
+    
+    # Test batch mean only working nodes
+    dummy_rec_error = np.array([[1, 2, 3, 4,5], [6, 7, 8, 9, 10], [11, 12, 13, 14, 15]])
+    dummy_cpu_alloc = np.array([[0, 0, 1, 1, 1], [0, 1, 1, 1, 1], [1, 1, 1, 1, 1]])
+    
+    ret = batch_mean_only_working_nodes(dummy_rec_error, dummy_cpu_alloc)
+    print(ret.shape)
+    print(ret)
     
