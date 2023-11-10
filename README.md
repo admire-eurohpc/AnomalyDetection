@@ -1,4 +1,6 @@
 ## Admire anomaly detection
+![Tests passing](https://gitlab.pcss.pl/deti/data-science/admire/admire-anomalydetection/badges/CNN_one_node/pipeline.svg)
+![Coverage](https://gitlab.pcss.pl/deti/data-science/admire/admire-anomalydetection/badges/CNN_one_node/coverage.svg)
 
 
 # Usage
