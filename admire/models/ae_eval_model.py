@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import tqdm
 import matplotlib.pyplot as plt
+from math import ceil
 from torch.utils.data import DataLoader
 from scipy.stats import zscore
 from lightning.pytorch.accelerators import CPUAccelerator
@@ -52,6 +53,8 @@ TRAIN_SLIDE = params['train_slide']
 ENCODER_LAYERS = eval(params['encoder_layers'])
 DECODER_LAYERS = eval(params['decoder_layers'])
 
+TEST_BATCH_SIZE = 4800
+
 #cuda not required for inference on batch = 1
 #use_cuda = torch.cuda.is_available()
 use_cuda=False
@@ -68,7 +71,7 @@ test_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_PATH}/test/",
                                     external_transform=train_dataset.get_transform(), # Use same transform as for training
                                     window_size=WINDOW_SIZE, 
                                     slide_length=TEST_SLIDE)
-test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=True, **kwargs)
+test_dataloader = DataLoader(test_dataset, batch_size=TEST_BATCH_SIZE, shuffle=False, drop_last=False, **kwargs)
 
 test_len = len(test_dataset)
 d = next(iter(test_dataloader))
@@ -99,12 +102,24 @@ test_recon_mae = []
 node_len = test_dataset.get_node_len()
 full_node_len = test_dataset.get_node_full_len()
 
+logging.debug(f"Node len: {node_len}, Full node len: {full_node_len}")
+
 # Run evaluation on test set
-for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=test_len):
+for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=ceil(test_len / TEST_BATCH_SIZE)):
     batch = batch.to(device)
-    err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch))))
+    batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
+    
+    err = torch.mean(batch_err, dim=(1,2))
+    
     err_detached = err.cpu().numpy()
-    test_recon_mae.append(err_detached)
+    
+    # Flatten the error tensor
+    err_detached = err_detached.flatten()
+    
+    
+    test_recon_mae += err_detached.tolist()
+
+logging.debug(f"Test reconstruction error len: {len(test_recon_mae)}")
 
 '''Due to processing whole test set at once (one node after one, last WINDOW_SIZE-1 samples of node x
  are processed together with samples from x+1 node resulting in high reconstruction errors on the beginning and the end of test_set)
@@ -115,6 +130,8 @@ for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test recon
 test_recon_mae_stripped = []
 for i in range(NODES_COUNT):
     test_recon_mae_stripped.append(test_recon_mae[(i*full_node_len): (node_len*(i+1)+(full_node_len-node_len)*i)])
+    
+logging.debug(f"Test reconstruction error stripped len: {len(test_recon_mae_stripped)}")
 
 test_recon_mae_np = np.reshape(test_recon_mae_stripped, (NODES_COUNT, node_len))
 test_recon_mae_list = test_recon_mae_np.tolist()
