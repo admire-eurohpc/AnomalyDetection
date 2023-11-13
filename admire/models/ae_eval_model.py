@@ -111,10 +111,10 @@ def setup_model(input_shape: tuple) -> tuple[LitAutoEncoder]:
                                         )
         
         case 'LSTM':
-            SEQUENCE_LENGTH = int(model_parameters['SEQUENCE_LENGTH'])
-            LSTM_OUT_DIM = int(model_parameters['LSTM_OUT_DIM'])
-            LSTM_IN_DIM = int(model_parameters['LSTM_IN_DIM'])
-            LSTM_HIDDEN_CHANNELS = list(ast.literal_eval(model_parameters['LSTM_HIDDEN_CHANNELS']))
+            SEQUENCE_LENGTH = int(model_parameters['sequence_length'])
+            LSTM_OUT_DIM = int(model_parameters['lstm_out_dim'])
+            LSTM_IN_DIM = int(model_parameters['lstm_in_dim'])
+            LSTM_HIDDEN_CHANNELS = list(ast.literal_eval(model_parameters['lstm_hidden_channels']))
             cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=LSTM_OUT_DIM, h_lstm_chan=LSTM_HIDDEN_CHANNELS, cpu_alloc=INCLUDE_CPU_ALLOC)
             cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=LSTM_IN_DIM, lstm_out_dim=1, h_lstm_chan=LSTM_HIDDEN_CHANNELS, cpu_alloc=INCLUDE_CPU_ALLOC, seq_len=SEQUENCE_LENGTH)
             autoencoder = LitAutoEncoder.load_from_checkpoint(
