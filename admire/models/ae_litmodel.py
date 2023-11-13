@@ -27,7 +27,7 @@ class LitAutoEncoder(pl.LightningModule):
         
     def forward(self, x):
         z = self.encoder(x)
-        x_hat = self.decoder(z, 40)
+        x_hat = self.decoder(z)
         return x_hat
     
     def _get_reconstruction_loss(self, x, x_hat):

@@ -2,9 +2,6 @@ import logging
 import torch
 import torch.nn as nn
 
-from sequitur.models.lstm_ae import LSTM_AE
-from sequitur.models.conv_ae import CONV_AE
-
 class Decoder(nn.Module):
     def __init__(self, num_input_channels: int, base_channel_size: int, latent_dim: int, act_fn: object = nn.GELU):
         """
@@ -97,7 +94,12 @@ class CNN_decoder(nn.Module):
         return self.model(x)
     
 class CNN_LSTM_decoder(nn.Module):
-    def __init__(self, lstm_input_dim, lstm_out_dim, h_lstm_chan, cpu_alloc) -> None:
+    def __init__(self, lstm_input_dim: int, 
+                 lstm_out_dim: int, 
+                 h_lstm_chan: list[int], 
+                 cpu_alloc: bool, 
+                 seq_len: int
+                 ) -> None:
         super().__init__()
         '''
         input_dim - encoding dim coming from encoder
@@ -109,6 +111,8 @@ class CNN_LSTM_decoder(nn.Module):
         layer_dims = [lstm_input_dim] + h_lstm_chan + [h_lstm_chan[-1]]
         self.num_layers = len(layer_dims) - 1
         self.layers = nn.ModuleList()
+        self.seq_len = seq_len
+        
         for index in range(self.num_layers):
             layer = nn.LSTM(
                 input_size=layer_dims[index],
@@ -141,9 +145,9 @@ class CNN_LSTM_decoder(nn.Module):
 
         self.cnn_decoder = nn.Sequential(*cnn_modules)
 
-    def forward(self, x, seq_len):
+    def forward(self, x):
         x = x.unsqueeze(1)
-        x = x.repeat(1, seq_len, 1)
+        x = x.repeat(1, self.seq_len, 1)
         
         for index, layer in enumerate(self.layers):
             x, (h_n, c_n) = layer(x)

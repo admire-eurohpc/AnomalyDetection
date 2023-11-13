@@ -1,8 +1,5 @@
-import time
 import logging
-import torch
 import torch.nn as nn
-import numpy as np
 
 class Encoder(nn.Module):
     def __init__(self, num_input_channels: int, base_channel_size: int, latent_dim: int, act_fn: object = nn.GELU):
