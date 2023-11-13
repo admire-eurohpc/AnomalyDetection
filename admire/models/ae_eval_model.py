@@ -12,8 +12,8 @@ from scipy.stats import zscore
 from lightning.pytorch.accelerators import CPUAccelerator
 import configparser
 
-from ae_encoder import CNN_encoder
-from ae_decoder import CNN_decoder
+from ae_encoder import CNN_encoder, CNN_LSTM_encoder
+from ae_decoder import CNN_decoder, CNN_LSTM_decoder
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
 from utils.plotting import *
@@ -56,8 +56,7 @@ DECODER_LAYERS = eval(params['decoder_layers'])
 TEST_BATCH_SIZE = 4800
 
 #cuda not required for inference on batch = 1
-#use_cuda = torch.cuda.is_available()
-use_cuda=False
+use_cuda = torch.cuda.is_available()
 device = torch.device('cuda:0' if use_cuda else 'cpu')
 kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {'num_workers': CPUAccelerator().auto_device_count(), 'pin_memory': False}
 
@@ -77,13 +76,17 @@ test_len = len(test_dataset)
 d = next(iter(test_dataloader))
 input_shape = d.shape
 
+cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=48, h_lstm_chan=[96], cpu_alloc=True)
+cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=48, lstm_out_dim =1, h_lstm_chan=[96], cpu_alloc=True)
+lstm_conv_autoencoder = LitAutoEncoder(cnn_lstm_encoder, cnn_lstm_decoder)
+
 cnn_encoder = CNN_encoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=ENCODER_LAYERS)
 cnn_decoder = CNN_decoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=DECODER_LAYERS)
 
 autoencoder = LitAutoEncoder.load_from_checkpoint(
                             checkpoint, 
-                            encoder=cnn_encoder, 
-                            decoder=cnn_decoder,
+                            encoder=cnn_lstm_encoder, 
+                            decoder=cnn_lstm_decoder,
                             input_shape=input_shape,
                             latent_dim=LATENT_DIM,
                             map_location=device
@@ -136,6 +139,10 @@ logging.debug(f"Test reconstruction error stripped len: {len(test_recon_mae_stri
 test_recon_mae_np = np.reshape(test_recon_mae_stripped, (NODES_COUNT, node_len))
 test_recon_mae_list = test_recon_mae_np.tolist()
 agg_recon_err = np.mean(test_recon_mae_np, axis=0)
+agg_recon_err_2 = np.median(test_recon_mae_np, axis=0)
+agg_recon_err_3 = np.quantile(test_recon_mae_np, 0.25, axis=0)
+agg_recon_err_4 = np.quantile(test_recon_mae_np, 0.75, axis=0)
+
 
 test_date_range = test_dataset.get_dates_range()
 test_date_range = pd.date_range(start=test_date_range['start'], end=test_date_range['end'], freq=f'{TEST_SLIDE}min', tz='Europe/Warsaw') # TODO set frequency dynamically?

@@ -207,7 +207,6 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
             if include_cpu_alloc:
                 _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
 
-
     return _df
 
 def host_sort(df, hosts):
@@ -258,7 +257,6 @@ if __name__ == '__main__':
     for type in ['test', 'train']:
         
         df = raw_df.copy(deep=True)
-         
         # Remove data before start date and after end date
         if type == 'test':
             df = remove_data_between_dates(df, '2000-01-01', test_date_range_start) 

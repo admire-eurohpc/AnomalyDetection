@@ -1,5 +1,8 @@
+import time
 import logging
+import torch
 import torch.nn as nn
+import numpy as np
 
 class Encoder(nn.Module):
     def __init__(self, num_input_channels: int, base_channel_size: int, latent_dim: int, act_fn: object = nn.GELU):
@@ -79,5 +82,60 @@ class CNN_encoder(nn.Module):
         self.model = nn.Sequential(*modules)
 
     def forward(self, x):
-        # logging.debug(f'Encoder inference shape: {x.shape}')
+        #logging.debug(f'Encoder inference shape: {x.shape}')
         return self.model(x)
+
+class CNN_LSTM_encoder(nn.Module):
+    def __init__(self, kernel_size: int=10, 
+                 lstm_input_dim: int=40, 
+                 lstm_out_dim: int=10,
+                 h_lstm_chan: list=[32, 64], 
+                 cpu_alloc: bool=True,) -> None:
+        super().__init__()
+
+        if cpu_alloc: input_channels = 4
+        else: input_channels = 3
+
+        
+        #CNN encoder
+        cnn_modules = []
+        channels = [8, 16]
+        cnn_modules.append(nn.Conv1d(input_channels, channels[0], kernel_size=kernel_size, padding='same')) #input = (batch x channel[0] x 60), output = (batch x channel[1] x 60)
+        cnn_modules.append(nn.ReLU())
+        cnn_modules.append(nn.AvgPool1d(3)) # input = (N x channel[0] x 60), output = (N x channel[0] x 20)
+        cnn_modules.append(nn.Dropout(0.2))
+
+        cnn_modules.append(nn.Conv1d(channels[0], channels[1], kernel_size=kernel_size, padding='same')) #input = (batch x channel[1] x 20), output = (batch x channel[2] x 20)
+        cnn_modules.append(nn.ReLU())
+        cnn_modules.append(nn.AvgPool1d(4)) # input = (N x channel[2] x 20), output = (N x channel[2] x 5)
+        cnn_modules.append(nn.Dropout(0.2))
+
+        cnn_modules.append(nn.Flatten())
+        cnn_modules.append(nn.Linear(80, 40)) # cnn_encoding_len 40
+
+        self.cnn_encoder = nn.Sequential(*cnn_modules)
+
+        #LSTM encoder
+        layer_dims = [lstm_input_dim] + h_lstm_chan + [lstm_out_dim]
+        self.num_layers = len(layer_dims) - 1
+        self.layers = nn.ModuleList()
+        for index in range(self.num_layers):
+            layer = nn.LSTM(
+                input_size=layer_dims[index],
+                hidden_size=layer_dims[index + 1],
+                num_layers=1,
+                batch_first=True
+            )
+            self.layers.append(layer)
+        self.h_activ, self.out_activ = nn.Sigmoid(), nn.Tanh()
+        
+    def forward(self, x):
+        x = self.cnn_encoder(x)
+        x = x.unsqueeze(2)
+        for index, layer in enumerate(self.layers):
+            x, (h_n, c_n) = layer(x)
+            if self.h_activ and index < self.num_layers - 1:
+                x = self.h_activ(x)
+            elif self.out_activ and index == self.num_layers - 1:
+                return self.out_activ(h_n).squeeze(0)
+        return h_n.squeeze()

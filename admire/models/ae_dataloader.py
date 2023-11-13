@@ -97,6 +97,7 @@ class TimeSeriesDataset(Dataset):
                 
         # It is important to convert to float32, otherwise pytorch will complain
         self.time_series = self.time_series.astype(np.float32)
+        self.time_series = np.reshape(self.time_series, (self.time_series.shape[0], self.time_series.shape[2]))
         # Drop unused channel of N nodes
         self.time_series = np.reshape(self.time_series, (self.time_series.shape[0], self.time_series.shape[2]))
         
@@ -111,7 +112,7 @@ class TimeSeriesDataset(Dataset):
 
     def __getitem__(self, idx): 
         start = idx * self.slide_length # Each window starts at a multiple of the slide length
-        ts = self.time_series[ :, start:start+self.window_size] # Get the window
+        ts = self.time_series[:, start:start+self.window_size] # Get the window
         return torch.Tensor(ts)
     
     def get_time_series(self):
@@ -152,7 +153,7 @@ class TimeSeriesDataset(Dataset):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
 
-    dataset = TimeSeriesDataset(data_dir="data/processed/march22-24_top200_withalloc_and_augm_fixed_hours/test", normalize=True)
+    dataset = TimeSeriesDataset(data_dir="data/processed/test_mar21-25_train_jan-july/test", normalize=True)
     d = next(iter(dataset))
     print(d.shape)
     print(d)

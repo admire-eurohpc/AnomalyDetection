@@ -23,8 +23,8 @@ from datetime import datetime
 
 
 # -- Own modules --
-from ae_encoder import CNN_encoder
-from ae_decoder import CNN_decoder
+from ae_encoder import CNN_encoder, CNN_LSTM_encoder
+from ae_decoder import CNN_decoder, CNN_LSTM_decoder
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
 from utils.plotting import plot_recon_error_agg, plot_recon_error_each_node
@@ -49,7 +49,7 @@ SEED = config.getint('TRAINING', 'SEED')
 L.seed_everything(SEED)
 
 # Ensure that all operations are deterministic on GPU (if used) for reproducibility
-torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
 
 BATCH_SIZE = config.getint('TRAINING', 'BATCH_SIZE')
@@ -66,6 +66,7 @@ INCLUDE_CPU_ALLOC = config.getboolean('PREPROCESSING', 'with_cpu_alloc')
 PROCESSED_DATA_DIR = config.get('PREPROCESSING', 'processed_data_dir')
 ENCODER_LAYERS = config.get('TRAINING', 'ENCODER_LAYERS')
 DECODER_LAYERS = config.get('TRAINING', 'DECODER_LAYERS')
+
 
 if __name__ == "__main__":
     
@@ -93,13 +94,13 @@ if __name__ == "__main__":
     d = next(iter(train_loader))
     input_shape = d.shape
     batch = d.shape[0]
-    nodes = None
     n_features = d.shape[1]
     win_size = d.shape[2]
 
     logging.debug(f"input_shape: {input_shape}")
-    logging.debug(f'batch: {batch}, nodes: {nodes}, number of features: {n_features}, window size: {win_size}')
+    logging.debug(f'batch: {batch}, number of features: {n_features}, window size: {win_size}')
 
+    
     # Log hyperparameters for tensorboard
     logger.log_hyperparams({
         'batch_size': BATCH_SIZE,
@@ -120,6 +121,11 @@ if __name__ == "__main__":
     cnn_decoder = CNN_decoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=eval(DECODER_LAYERS))
     autoencoder = LitAutoEncoder(cnn_encoder, cnn_decoder, monitor='train_loss', monitor_mode='min')
 
+    # LSTM
+    # cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=48, h_lstm_chan=[96], cpu_alloc=True)
+    # cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=48, lstm_out_dim =1, h_lstm_chan=[96], cpu_alloc=True)
+    # lstm_conv_autoencoder = LitAutoEncoder(cnn_lstm_encoder, cnn_lstm_decoder)
+
     # Add early stopping
     early_stop_callback = pl.callbacks.EarlyStopping(
         monitor="train_loss", 
@@ -139,6 +145,8 @@ if __name__ == "__main__":
     profiler = SimpleProfiler()
 
     logging.debug(f'Autoencoder Summary: {autoencoder}')
+    # logging.debug(f'Autoencoder Summary: {lstm_conv_autoencoder}')
+    
     trainer = pl.Trainer(
         max_epochs=MAX_EPOCHS,
         logger=logger,
@@ -156,107 +164,10 @@ if __name__ == "__main__":
     trainer.fit(
         model=autoencoder, 
         train_dataloaders=train_loader
+        # LSTM
+        # model=lstm_conv_autoencoder, 
+        # train_dataloaders=train_loader,
         )
 
     logging.debug(os.path.join(logger.save_dir, logger.name, logger.version, "checkpoints"))
-    
-    
-    # Don't run test because we run it separately in ae_eval_model.py
-    exit()
-    
-    autoencoder = LitAutoEncoder.load_from_checkpoint(
-                                checkpoint_path=checkpoint_callback.best_model_path,
-                                encoder=cnn_encoder, 
-                                decoder=cnn_decoder,
-                                input_shape=input_shape,
-                                latent_dim=LATENT_DIM,
-                                map_location=device
-                                )
-    # ----- TEST ----- #
-
-    # Setup test data
-    test_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_DATA_DIR}/test/", 
-                                     normalize=True, 
-                                     external_transform=dataset.get_transform(), # Use same transform as for training
-                                     window_size=WINDOW_SIZE, 
-                                     slide_length=TEST_SLIDE)
-    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False, **kwargs)
-    
-    test_len = len(test_dataset)
-    logging.debug(f"test input_shape: {test_len}")
-
-    # Now test the model on february data
-    # Run the model on the entire test set and report reconstruction error to tensorboard
-    autoencoder.eval()
-    autoencoder.freeze()
-
-    logging.debug(f"Running model on test set")
-
-    test_recon_mae = []
-    node_len = test_dataset.get_node_len()
-    full_node_len = test_dataset.get_node_full_len()
-
-    # Run evaluation on test set
-    for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=test_len):
-        batch = batch.to(device)
-        err = torch.mean(torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch))))
-        err_detached = err.cpu().numpy()
-        test_recon_mae.append(err_detached)
-
-    '''Due to processing whole test set at once (one node after one, last WINDOW_SIZE-1 samples of node x
-    are processed together with samples from x+1 node resulting in high reconstruction errors on the beginning and the end of test_set)
-    On training set this is also present but considering vast amount of samples in each node the impact is insignificant'''
-
-    test_recon_mae_stripped = []
-    for i in range(NODES_COUNT):
-        test_recon_mae_stripped.append(test_recon_mae[(i*full_node_len): (node_len*(i+1)+(full_node_len-node_len)*i)])
-
-    test_recon_mae_np = np.reshape(test_recon_mae_stripped, (NODES_COUNT, node_len))
-    test_recon_mae_list = test_recon_mae_np.tolist()
-    agg_recon_err = np.mean(test_recon_mae_np, axis=0)
-    
-    logger.log_metrics({'test_loss': np.mean(agg_recon_err)}, step=0)
-
-    test_date_range = test_dataset.get_dates_range()
-    test_date_range = pd.date_range(start=test_date_range['start'], end=test_date_range['end'], freq=f'{TEST_SLIDE}min', tz='Europe/Warsaw') # TODO set frequency dynamically?
-
-    logging.debug(f'Dates range test: start {test_date_range.min()} end {test_date_range.max()}')
-    logging.debug(f'Test len: {len(test_dataloader)}, Dates len: {len(test_date_range)}, Recon len: {len(test_recon_mae)}')
-
-    hostnames = test_dataset.get_filenames()
-
-    # Display the reconstruction error over time manually
-    logging.debug(f"Plotting reconstruction error over time")
-
-    plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=image_save_path)
-    plot_recon_error_agg(reconstruction_errors = agg_recon_err, time_axis = test_date_range, hostnames = 'mean recon_error', savedir=image_save_path)
-
-
-    #calculate threshold metric z-score for anomaly evaluation
-    zscores = np.zeros((NODES_COUNT, node_len))
-    for i in range(node_len):
-        zscores[:, i] = (zscore(test_recon_mae_np[:, i]))
-
-    plot_recon_error_each_node(reconstruction_errors = zscores, time_axis = test_date_range, n_nodes = 200, hostnames = hostnames, savedir=image_save_path, out_name = 'zscores')
-
-    # Plot some reconstructions vs real examples
-    # logging.debug(f"Plotting reconstructions vs real")
-    # sample = test_dataset.get_time_series()
-    # sample = torch.Tensor(sample[:, :, 0:WINDOW_SIZE].flatten())
-    # sample = sample.to(device)
-    # reconstructions = autoencoder.decoder(autoencoder.encoder(sample)).cpu().numpy()
-    # sample = sample.cpu().numpy()
-    # plot_embeddings_vs_real(
-    #     _embeddings=reconstructions,
-    #     _real=sample,
-    #     channels=channels,
-    #     height=height,
-    #     width=width,
-    #     checkpoint=checkpoint_callback.best_model_path,
-    #     image_save_path=image_save_path,
-    #     write=True,
-    #     show=False,
-    # )
-    
-    logging.debug(f"Finished")
     
