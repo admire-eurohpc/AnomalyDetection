@@ -8,7 +8,6 @@ import torch
 from torch.utils.data import Dataset
 import logging
 import tqdm
-import matplotlib.pyplot as plt
 import configparser
 
 from utils.transformations import Transform
@@ -97,8 +96,6 @@ class TimeSeriesDataset(Dataset):
                 
         # It is important to convert to float32, otherwise pytorch will complain
         self.time_series = self.time_series.astype(np.float32)
-        self.time_series = np.reshape(self.time_series, (self.time_series.shape[0], self.time_series.shape[2]))
-        # Drop unused channel of N nodes
         self.time_series = np.reshape(self.time_series, (self.time_series.shape[0], self.time_series.shape[2]))
         
         logger.debug(f"Time series shape: {self.time_series.shape}")
