@@ -108,6 +108,9 @@ if __name__ == "__main__":
         for param in config_dict[key]:
             if param.lower() not in hparams[key] and param.upper() not in hparams[key]:
                 hparams[key][param] = config_dict[key][param]
+    
+    hparams['TRAINING']['full_training_logs_dir'] = logger.log_dir
+    
     logger.log_hyperparams(hparams)
     # ---------------- #
     
