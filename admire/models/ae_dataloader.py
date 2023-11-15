@@ -150,7 +150,7 @@ class TimeSeriesDataset(Dataset):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
 
-    dataset = TimeSeriesDataset(data_dir="data/processed/test_mar21-25_train_jan-july/test", normalize=True)
+    dataset = TimeSeriesDataset(data_dir="data/processed/test", normalize=True)
     d = next(iter(dataset))
     print(d.shape)
     print(d)
