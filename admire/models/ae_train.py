@@ -72,6 +72,7 @@ if __name__ == "__main__":
     device = torch.device('cuda:0' if use_cuda else 'cpu')
     accelerator = 'gpu' if use_cuda else 'cpu'
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {'num_workers': CPUAccelerator().auto_device_count(), 'pin_memory': False}
+    device_num = 1
     
 
     # -- LOAD DATA -- #
@@ -167,7 +168,7 @@ if __name__ == "__main__":
             ],   
         enable_checkpointing=ENABLE_CHECKPOINTING,
         accelerator=accelerator,
-        devices="auto", 
+        devices=device_num, 
         strategy="auto",
         profiler=profiler,
         )
