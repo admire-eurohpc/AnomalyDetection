@@ -8,11 +8,13 @@ import torch
 from torch.utils.data import Dataset
 import logging
 import tqdm
-import matplotlib.pyplot as plt
+import configparser
 
 from utils.transformations import Transform
 
 logger = logging.getLogger(__name__)
+config = configparser.ConfigParser()
+config.read('config.ini')
 
 class TimeSeriesDataset(Dataset):
     '''Dataset generator class for time series data'''
@@ -20,8 +22,8 @@ class TimeSeriesDataset(Dataset):
                  transform=None, 
                  target_transform=None, 
                  normalize: bool = True,
-                 window_size: int = 20,
-                 slide_length: int = 10,
+                 window_size: int = 60,
+                 slide_length: int = 1,
                  external_transform: Transform = None
                  ) -> None:
         '''
@@ -35,11 +37,14 @@ class TimeSeriesDataset(Dataset):
         '''
 
         self.time_series: npt.NDarray = None
+        self.filenames = []
         self.window_size = window_size
         self.slide_length = slide_length
         self.transform = transform
         self.target_transform = target_transform
         self.normalize = normalize
+        self.include_cpu_alloc = config.getboolean('PREPROCESSING','with_cpu_alloc')
+        self.nodes_count = config.getint('PREPROCESSING', 'nodes_count_to_process')
         
         # Get all filenames in data_dir
         _, _, filenames = os.walk(data_dir).__next__()
@@ -60,19 +65,23 @@ class TimeSeriesDataset(Dataset):
         # Desired shape will be (n_features x n_nodes x n_time_steps )
         # e.g. (3 features x 100 nodes x 1000 time ticks )
         for filename in tqdm.tqdm(filenames, desc="Loading ts data"):
+            columns = ['power', 'cpu1', 'cpu2']
+            if self.include_cpu_alloc:
+                columns.append('cpus_alloc')
             _data = pd.read_parquet(
                         os.path.join(data_dir, filename), 
-                        columns=['power', 'cpu1', 'cpu2']
+                        columns=columns
                         ) \
-                    .to_numpy().T.reshape(3, 1, -1) 
+                    .to_numpy().T.reshape(len(columns), 1, -1) 
                     
-            logger.debug(f'Loaded data shape: {_data.shape}')
+            #logger.debug(f'Loaded data shape: {_data.shape}')
                     
             if self.time_series is None:
                 self.time_series = _data
             else:
-                self.time_series = np.concatenate((self.time_series, _data), axis=1)
-        
+                self.time_series = np.concatenate((self.time_series, _data), axis=2)
+
+            self.filenames.append(filename[0:5])
         logger.debug(f"Time series shape after concatenation: {self.time_series.shape}")
         
         if self.normalize and not external_transform:
@@ -87,6 +96,7 @@ class TimeSeriesDataset(Dataset):
                 
         # It is important to convert to float32, otherwise pytorch will complain
         self.time_series = self.time_series.astype(np.float32)
+        self.time_series = np.reshape(self.time_series, (self.time_series.shape[0], self.time_series.shape[2]))
         
         logger.debug(f"Time series shape: {self.time_series.shape}")
 
@@ -95,30 +105,42 @@ class TimeSeriesDataset(Dataset):
         '''
         Returns the number of windows in the time series given the window size and slide length
         '''
-        return self.time_series.shape[2] // self.slide_length - self.window_size // self.slide_length # TODO: Check this thoroughly
+        return ((self.time_series.shape[1] - self.window_size)// self.slide_length) + 1 # TODO: Check this thoroughly
 
     def __getitem__(self, idx): 
         start = idx * self.slide_length # Each window starts at a multiple of the slide length
-        ts = self.time_series[:, :, start:start+self.window_size] # Get the window
-        return torch.Tensor(ts.flatten())
+        ts = self.time_series[:, start:start+self.window_size] # Get the window
+        return torch.Tensor(ts)
     
     def get_time_series(self):
         '''Returns the time series. If normalized, returns the denormalized time series'''
-        if self.normalize:
-            return self.transform.denormalize_time_series(self.time_series)
+        # if self.normalize:
+        #     return self.transform.denormalize_time_series(self.time_series)
         
         return self.time_series
     
+    def get_node_len(self):
+        '''Returns the node length adjusted to dataloader scenario (without final N samples) 
+         since we can't reconstruct N min window depending on less than N samples'''
+        return ((self.time_series.shape[1]//self.nodes_count - self.window_size)// self.slide_length) + 1
+    
+    def get_node_full_len(self):
+        '''Returns the full node length including last N samples'''
+        return self.time_series.shape[1]//self.nodes_count 
+    
     def get_input_layer_size_flattened(self):
-        return self.time_series.shape[1] * self.time_series.shape[2] * self.window_size
+        return self.time_series.shape[0] * self.time_series.shape[1] * self.window_size
     
     def get_input_layer_shape(self):
         '''(n_features x n_nodes x n_time_steps)'''
-        return self.time_series.shape[0], self.time_series.shape[1], self.window_size
+        return self.time_series.shape[0], self.window_size
     
     def get_transform(self):
         '''Returns the transform object used to normalize the data'''
         return self.transform
+    
+    def get_filenames(self):
+        return self.filenames
     
     def get_dates_range(self) -> Dict[str, datetime]:
         '''Returns the start and end dates of the time series'''
@@ -128,8 +150,7 @@ class TimeSeriesDataset(Dataset):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
 
-    dataset = TimeSeriesDataset(data_dir="data/processed/", normalize=True)
-
+    dataset = TimeSeriesDataset(data_dir="data/processed/test", normalize=True)
     d = next(iter(dataset))
     print(d.shape)
     print(d)

@@ -20,8 +20,8 @@ class Transform:
         '''
         self.min = np.min(np.min(time_series, axis=channel_dim, keepdims=True), axis=1, keepdims=True)
         self.max = np.max(np.max(time_series, axis=channel_dim, keepdims=True), axis=1, keepdims=True)
-        logging.debug(f"Min: {self.min}")
-        logging.debug(f"Max: {self.max}")
+        logging.debug(f"Min: {list(self.min)}")
+        logging.debug(f"Max: {list(self.max)}")
 
     
     def normalize_time_series(self, time_series: npt.NDArray) -> npt.NDArray:

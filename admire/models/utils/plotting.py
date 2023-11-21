@@ -5,6 +5,9 @@ import plotly.io as pio
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
+import numpy as np
+import pandas as pd
+import tqdm
 
 def plot_embeddings_vs_real(_embeddings: npt.NDArray, 
                             _real: npt.NDArray, 
@@ -68,37 +71,45 @@ def plot_embeddings_vs_real(_embeddings: npt.NDArray,
                     )
             if show:
                 fig.show()
-            
-            
-def plot_reconstruction_error_over_time(reconstruction_errors: List[float],
-                                        time_axis: Union[List[int], List[Any], None] = None,
-                                        show: bool = False,
-                                        write: bool = False,
-                                        savedir: bool = 'images'
-                                        ) -> None:
+
+def plot_recon_error_each_node(reconstruction_errors: list, 
+                               time_axis: Union[List[int], List[Any], None], 
+                               n_nodes: int,  
+                               hostnames: list, 
+                               savedir: str = 'images', 
+                               out_name: str = 'plotly_reconstruction'):
     '''
-    Plots the reconstruction error over time.
+    Plots the reconstruction error over time for each node.
+
+    `reconstruction_errors` is a list of floats, where each float is the reconstruction error for a single timestep.
+    `time_axis` is a list of ints, where each int is the timestep for the corresponding reconstruction error.
+    `n_nodes` is a number of nodes that were processed
+    `hostnames` list of hostnames that were processed
+    `savedir` directory in which the plot files will be saved
+    '''
+    fig = make_subplots(rows=1, cols=1)
+ 
+    for i in tqdm.tqdm(range(n_nodes), desc="Plotting node ReconError"):
+        fig.append_trace(go.Scatter(x = time_axis, y = reconstruction_errors[i], mode="lines", name=hostnames[i]), row=1, col=1)
+
+    fig.write_html(os.path.join(savedir, out_name + '.html'))
+    fig.write_image(os.path.join(savedir, out_name + '.png'))
+
+def plot_recon_error_agg(reconstruction_errors: list, 
+                         time_axis: Union[List[int], List[Any], None], 
+                         hostnames: list, 
+                         savedir: str = 'images'):
+    '''
+    Plots the aggregated reconstruction error over time.
     
     `reconstruction_errors` is a list of floats, where each float is the reconstruction error for a single timestep.
     `time_axis` is a list of ints, where each int is the timestep for the corresponding reconstruction error.
-    `show` set to `True` if the plot should be shown
-    `write` set to `True` if the plot should be saved to file
+    `hostnames` list of hostnames that were processed
     `savedir` directory in which the plot files will be saved
     '''
-    
-    if time_axis is None:
-        time_axis = [i for i in range(len(reconstruction_errors))]
-    
+     
     fig = make_subplots(rows=1, cols=1)
-    fig.add_scatter(x=time_axis, y=reconstruction_errors)
-    fig.update_layout(
-        title=f"Reconstruction error over time",
-    )
+    fig.append_trace(go.Scatter(x = time_axis, y = reconstruction_errors, mode="lines", name=hostnames), row=1, col=1)
 
-    if show:
-        pio.renderers.default = "browser"   
-        fig.show()
-
-    if write:
-        fig.write_html(os.path.join(savedir, 'plotly_reconstruction.html'))
-        fig.write_image(os.path.join(savedir, 'plotly_reconstruction.png'))
+    fig.write_html(os.path.join(savedir, 'plotly_reconstruction.html'))
+    fig.write_image(os.path.join(savedir, 'plotly_reconstruction.png'))
