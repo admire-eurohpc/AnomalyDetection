@@ -4,6 +4,7 @@ import os
 import ast
 from datetime import datetime
 import pandas as pd
+import argparse
 
 # -- Pytorch imports --
 import torch
@@ -38,6 +39,14 @@ IMG_SAVE_DIRNAME = config_dict['TRAINING']['IMG_SAVE_DIRNAME']
 MODEL_TYPE = config_dict['TRAINING']['MODEL_TYPE']
 ENABLE_CHECKPOINTING = config_dict['TRAINING']['ENABLE_CHECKPOINTING'].lower() == 'true'
 SAVE_TOP_K_CHECKPOINTS = int(config_dict['TRAINING']['SAVE_TOP_K'])
+
+# Args
+parser = argparse.ArgumentParser()
+parser.add_argument('--model_type', type=str, default=MODEL_TYPE, choices=['CNN', 'LSTMCNN', 'LSTMPLAIN'], help='Model type to train')
+
+if parser.parse_args().model_type is not None:
+    MODEL_TYPE = parser.parse_args().model_type
+
 
 # EVALUATION
 EVALUATION_BATCH_SIZE = int(config_dict['EVALUATION']['BATCH_SIZE'])
