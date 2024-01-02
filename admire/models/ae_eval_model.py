@@ -14,6 +14,7 @@ from scipy.stats import zscore
 import torch
 from torch.utils.data import DataLoader
 from lightning.pytorch.accelerators import CPUAccelerator
+import lightning as L
 
 # -- Project imports --
 from ae_encoder import CNN_encoder, CNN_LSTM_encoder
@@ -23,53 +24,6 @@ from ae_dataloader import TimeSeriesDataset
 from utils.plotting import *
 from utils.config_reader import read_config
 
-USE_CUDA = torch.cuda.is_available()
-DEVICE = torch.device('cuda:0' if USE_CUDA else 'cpu')
-
-# -- Import settings and setup --
-config_dict = read_config()
-TEST_BATCH_SIZE = int(config_dict['EVALUATION']['BATCH_SIZE'])
-LOGS_PATH = config_dict['EVALUATION']['logs_path']
-PLOT_ZSCORES = config_dict['EVALUATION']['plot_zscores'].lower() == 'true'
-PLOT_REC_ERROR = config_dict['EVALUATION']['plot_rec_error'].lower() == 'true'
-# ------------------ #
-
-# -- Load parameters from hparams.yaml --
-with open(os.path.join(os.getcwd(), LOGS_PATH, 'hparams.yaml'), 'r') as f:
-    params = yaml.load(f, yaml.UnsafeLoader)
-    
-model_key = list(filter(lambda x: 'PARAMETERS' in x, params.keys()))[0]
-if model_key == None:
-    raise Exception('No model parameters found in hparams.yaml')
-
-model_parameters = params[model_key]
-LATENT_DIM = int(model_parameters['latent_dim'])
-TEST_SLIDE = int(model_parameters['test_slide'])
-WINDOW_SIZE = int(model_parameters['window_size'])
-TRAIN_SLIDE = int(model_parameters['train_slide'])
-ENCODER_LAYERS = ast.literal_eval(model_parameters['encoder_layers'])
-DECODER_LAYERS = ast.literal_eval(model_parameters['decoder_layers'])
-
-NODES_COUNT = int(params['PREPROCESSING']['nodes_count_to_process'])
-INCLUDE_CPU_ALLOC = params['PREPROCESSING']['with_cpu_alloc'].lower() == 'true'
-PROCESSED_PATH = params['PREPROCESSING']['processed_data_dir']
-TEST_DATES_RANGE = params['PREPROCESSING']['test_date_range']
-
-MODEL_TYPE = params['TRAINING']['model_type']
-
-path = os.path.join(os.getcwd(), LOGS_PATH, 'checkpoints')
-save_eval_path = os.path.join(os.getcwd(), LOGS_PATH, f'eval-{TEST_DATES_RANGE.split(",")}')
-
-if not os.path.exists(save_eval_path):
-    os.makedirs(save_eval_path)
-
-filenames = os.walk(path).__next__()[2] # get any checkpoint
-last_epoch_idx = np.array([int(i.split('-')[0].split('=')[1]) for i in filenames]).argmax()
-filename = filenames[last_epoch_idx]
-
-checkpoint = os.path.join(path, filename)
-
-logging.basicConfig(level=logging.DEBUG)
 
 # ------------------ #
 
@@ -128,12 +82,16 @@ def setup_model(input_shape: tuple) -> tuple[LitAutoEncoder]:
 
     return autoencoder
 
-def run_test(autoencoder: LitAutoEncoder, 
+def run_test(autoencoder: L.LightningModule, 
              test_dataloader: DataLoader, 
              test_dataset: TimeSeriesDataset,
              test_date_range: np.ndarray,
+             nodes_count: int,
              save_rec_err_to_parquet: bool = True,
-             plot_rec_err: bool = True
+             plot_rec_err: bool = True,
+             test_batch_size: int = 1,
+             device: str = 'cpu',
+             save_eval_path: str = 'eval'
              ) -> np.ndarray:
     logging.debug(f"Running model on test set")
 
@@ -144,8 +102,8 @@ def run_test(autoencoder: LitAutoEncoder,
     logging.debug(f"Node len: {node_len}, Full node len: {full_node_len}")
 
     # Run evaluation on test set
-    for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=ceil(len(test_dataset) / TEST_BATCH_SIZE)):
-        batch = batch.to(DEVICE)
+    for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=ceil(len(test_dataset) / test_batch_size)):
+        batch = batch.to(device)
         batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
         
         err = torch.mean(batch_err, dim=(1,2))
@@ -167,12 +125,12 @@ def run_test(autoencoder: LitAutoEncoder,
     # ----- RECONSTRUCTION ERROR ----- #
 
     test_recon_mae_stripped = []
-    for i in range(NODES_COUNT):
+    for i in range(nodes_count):
         test_recon_mae_stripped.append(test_recon_mae[(i*full_node_len): (node_len*(i+1)+(full_node_len-node_len)*i)])
         
     logging.debug(f"Test reconstruction error stripped len: {len(test_recon_mae_stripped)}")
 
-    test_recon_mae_np = np.reshape(test_recon_mae_stripped, (NODES_COUNT, node_len))
+    test_recon_mae_np = np.reshape(test_recon_mae_stripped, (nodes_count, node_len))
     test_recon_mae_list = test_recon_mae_np.tolist()
     agg_recon_err = np.mean(test_recon_mae_np, axis=0)
 
@@ -192,7 +150,7 @@ def run_test(autoencoder: LitAutoEncoder,
 
         plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, 
                                 time_axis = test_date_range, 
-                                n_nodes = 200, 
+                                n_nodes = nodes_count, 
                                 hostnames = hostnames, 
                                 savedir=save_eval_path
                                 )
@@ -272,6 +230,54 @@ def plot_z_scores(test_recon_mae_np: np.ndarray,
     
 
 if __name__ == "__main__":
+    
+    USE_CUDA = torch.cuda.is_available()
+    DEVICE = torch.device('cuda:0' if USE_CUDA else 'cpu')
+
+    # -- Import settings and setup --
+    config_dict = read_config()
+    TEST_BATCH_SIZE = int(config_dict['EVALUATION']['BATCH_SIZE'])
+    LOGS_PATH = config_dict['EVALUATION']['logs_path']
+    PLOT_ZSCORES = config_dict['EVALUATION']['plot_zscores'].lower() == 'true'
+    PLOT_REC_ERROR = config_dict['EVALUATION']['plot_rec_error'].lower() == 'true'
+    # ------------------ #
+
+    # -- Load parameters from hparams.yaml --
+    with open(os.path.join(os.getcwd(), LOGS_PATH, 'hparams.yaml'), 'r') as f:
+        params = yaml.load(f, yaml.UnsafeLoader)
+        
+    model_key = list(filter(lambda x: 'PARAMETERS' in x, params.keys()))[0]
+    if model_key == None:
+        raise Exception('No model parameters found in hparams.yaml')
+
+    model_parameters = params[model_key]
+    LATENT_DIM = int(model_parameters['latent_dim'])
+    TEST_SLIDE = int(model_parameters['test_slide'])
+    WINDOW_SIZE = int(model_parameters['window_size'])
+    TRAIN_SLIDE = int(model_parameters['train_slide'])
+    ENCODER_LAYERS = ast.literal_eval(model_parameters['encoder_layers'])
+    DECODER_LAYERS = ast.literal_eval(model_parameters['decoder_layers'])
+
+    NODES_COUNT = int(params['PREPROCESSING']['nodes_count_to_process'])
+    INCLUDE_CPU_ALLOC = params['PREPROCESSING']['with_cpu_alloc'].lower() == 'true'
+    PROCESSED_PATH = params['PREPROCESSING']['processed_data_dir']
+    TEST_DATES_RANGE = params['PREPROCESSING']['test_date_range']
+
+    MODEL_TYPE = params['TRAINING']['model_type']
+
+    path = os.path.join(os.getcwd(), LOGS_PATH, 'checkpoints')
+    save_eval_path = os.path.join(os.getcwd(), LOGS_PATH, f'eval-{TEST_DATES_RANGE.split(",")}')
+
+    if not os.path.exists(save_eval_path):
+        os.makedirs(save_eval_path)
+
+    filenames = os.walk(path).__next__()[2] # get any checkpoint
+    last_epoch_idx = np.array([int(i.split('-')[0].split('=')[1]) for i in filenames]).argmax()
+    filename = filenames[last_epoch_idx]
+
+    checkpoint = os.path.join(path, filename)
+
+    logging.basicConfig(level=logging.DEBUG)
     test_dataloader, test_dataset = setup_dataloader()
     
     test_len = len(test_dataset)
@@ -289,6 +295,7 @@ if __name__ == "__main__":
                                 test_dataloader=test_dataloader,
                                 test_dataset=test_dataset,
                                 test_date_range=test_date_range,
+                                nodes_count=NODES_COUNT,
                                 save_rec_err_to_parquet=True,
                                 plot_rec_err=PLOT_REC_ERROR
                                 )
