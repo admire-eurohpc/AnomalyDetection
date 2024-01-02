@@ -25,6 +25,8 @@ class LitAutoEncoder(pl.LightningModule):
         self.mae = MeanAbsoluteError()
         self.mape = MeanAbsolutePercentageError()
         
+        
+        
     def forward(self, x):
         z = self.encoder(x)
         x_hat = self.decoder(z)
@@ -64,6 +66,9 @@ class LitAutoEncoder(pl.LightningModule):
         self.log('train_loss', loss)
         self.log('train_mae', self._get_reconstruction_mae(x, x_hat))
         self.log('train_mape', self._get_reconstruction_mape(x, x_hat))
+        
+        self.log_gradients_in_model(self.global_step)
+        
         return loss
     
     
@@ -74,3 +79,10 @@ class LitAutoEncoder(pl.LightningModule):
         self.log('test_reconstruction_loss(mse)', loss)
         self.log('test_reconstruction_mae', self._get_reconstruction_mae(x, x_hat))
 
+
+    def log_gradients_in_model(self, step):
+        for tag, value in self.named_parameters():
+            if value.grad is not None:
+                
+                self.tensorboard_logger = self.trainer.logger.experiment
+                self.tensorboard_logger.add_histogram(tag + "/grad", value.grad.cpu(), step)
