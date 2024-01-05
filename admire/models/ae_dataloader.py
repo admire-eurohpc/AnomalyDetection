@@ -130,7 +130,11 @@ class TimeSeriesDataset(Dataset):
     
     def get_node_full_len(self):
         '''Returns the full node length including last N samples'''
-        return ((self.time_series.shape[1]//self.nodes_count)//self.slide_length)
+        full_node_len = (self.time_series.shape[1]//self.nodes_count)
+        if full_node_len % self.slide_length == 0:
+            return ((self.time_series.shape[1]//self.nodes_count)//self.slide_length)
+        else:
+            return ((self.time_series.shape[1]//self.nodes_count)//self.slide_length) + full_node_len%self.slide_length
     
     def get_input_layer_size_flattened(self):
         return self.time_series.shape[0] * self.time_series.shape[1] * self.window_size
