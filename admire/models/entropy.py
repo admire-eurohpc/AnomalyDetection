@@ -12,6 +12,9 @@ import matplotlib.pyplot as plt
 from math import ceil
 from scipy.stats import zscore
 import torch.multiprocessing as mp
+from itertools import chain
+import time
+
 
 # -- Pytorch imports --
 import torch
@@ -91,12 +94,12 @@ numba_logger.setLevel(logging.WARNING)
 
 ENTROPY_WINDOW_SIZE = 180
 
-def multiprocess_batch(batch: torch.Tensor, time_series_size: float):
+def multiprocess_batch(batch: torch.Tensor):
     entropy = []
     for i in range(0,batch.shape[0]):
         _,counts=torch.unique(batch[i].data.flatten(start_dim=0),dim=0,return_counts=True)
-        p=(counts)/time_series_size 
-        entropy.append(torch.sum(p* torch.log2(p))*-1)
+        p=(counts)/float(batch.shape[1]*batch.shape[2])
+        entropy.append(float(torch.sum(p* torch.log2(p))*-1))
     return entropy
 
 
@@ -112,7 +115,7 @@ def setup_dataloader() -> tuple[DataLoader, TimeSeriesDataset]:
                                         normalize=True, 
                                         #external_transform=train_dataset.get_transform(), # Use same transform as for training
                                         window_size=WINDOW_SIZE, 
-                                        slide_length=100)
+                                        slide_length=1)
     
     
    
@@ -131,67 +134,30 @@ if __name__ == "__main__":
     full_node_len = test_dataset.get_node_full_len()
     print("node len: ", node_len, "full_node_len: ", full_node_len)
 
-    def my_callback(result):
-        print(len(result))
-        for entropy in result:
-            entropy_list.append(entropy)
-
-    queue = mp.Queue()
-    pool = mp.Pool(4)
-
     processes = []
-
-    for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running entropy calculation reconstruction error", total=ceil(len(test_dataset) / TEST_BATCH_SIZE)):
-        #batch = batch.to(DEVICE)
-        
-        entropy=torch.zeros(batch.shape[0],1,requires_grad=False)
-        time_series_size=float(batch.shape[1]*batch.shape[2])
-        r = pool.apply_async(multiprocess_batch, args=(batch, time_series_size), callback=my_callback)
-        # wait for completion of all tasks:
-
-        '''
-        p = mp.Process(target=multiprocess_batch, args=(batch, queue,))
-        processes.append(p)
-        if len(processes) == 4:
-            counter = len(processes)
-            for p in processes:
-                p.start()
-
-            print("all processes started", queue.qsize())
-            seen_sentinel_count = 0
-            while seen_sentinel_count < len(processes)-1:
-                if queue.empty():
-                    break
-                a = queue.get()
-                if a is None:
-                    seen_sentinel_count += 1
-                # the original idea is that instead of print
-                # I will be writing to a file that is already open
-                else:
-                    entropy_list.append(a[:])
-            
-            for p in processes:
-                p.join()
+    with mp.Pool(24) as pool:
+        for x in tqdm.tqdm(pool.imap(multiprocess_batch, test_dataloader),
+                                desc="Running entropy calculation reconstruction error", 
+                                total=len(test_dataloader)):
+            entropy_list.append(x)
 
 
-            processes = []
-            '''
-        
-    pool.close()
-    pool.join()
+    entropy_list= list(chain.from_iterable(entropy_list))
 
-    #logging.debug(f"Test reconstruction error len: {len(test_recon_mae)}")
-
-    #time_series = np.reshape(test_dataset.get_time_series(), (len(test_dataset)/200, 200))
-
-    print(len(entropy_list))
-    
     entropy_stripped = []
     for i in range(NODES_COUNT):
-        entropy_stripped.append(entropy_list[(i*full_node_len): (node_len*(i+1)+(full_node_len-node_len)*i)])
+        print(len(entropy_list[(i*full_node_len): (i*full_node_len) + node_len]))
+        entropy_stripped.append(entropy_list[(i*full_node_len): (i*full_node_len) + node_len])
         
     logging.debug(f"Test reconstruction error stripped len: {len(entropy_stripped)}")
 
     test_recon_mae_np = np.reshape(entropy_stripped, (NODES_COUNT, node_len))
     test_recon_mae_list = test_recon_mae_np.tolist()
+
+    plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, 
+                                time_axis = test_dataset.get_dates_range(), 
+                                n_nodes = 200, 
+                                hostnames = test_dataset.get_filenames(), 
+                                savedir=save_eval_path
+                                )
 
