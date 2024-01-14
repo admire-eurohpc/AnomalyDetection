@@ -83,7 +83,7 @@ logging.basicConfig(level=logging.DEBUG)
 if __name__ == "__main__":
     
     use_cuda = torch.cuda.is_available()
-    device = torch.device('cuda:0' if use_cuda else 'cpu')
+    device = torch.device('cuda' if use_cuda else 'cpu')
     accelerator = 'gpu' if use_cuda else 'cpu'
     kwargs = {'num_workers': 4, 'pin_memory': True} if use_cuda else {'num_workers': 4, 'pin_memory': False}
     device_num = 1
@@ -177,7 +177,7 @@ if __name__ == "__main__":
     # -- CALLBACKS -- #
     early_stop_callback = pl.callbacks.EarlyStopping(
         monitor="train_loss", 
-        min_delta=0.001, 
+        # min_delta=0.0, 
         patience=5, 
         verbose=True, 
         mode="min"
@@ -197,6 +197,8 @@ if __name__ == "__main__":
     
     # -- TRAINING -- #
     logging.debug(f'Autoencoder Summary: {autoencoder}')
+    
+    autoencoder.to(device)
     
     trainer = pl.Trainer(
         max_epochs=MAX_EPOCHS,

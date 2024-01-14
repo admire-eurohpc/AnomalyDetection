@@ -8,6 +8,7 @@ import numpy as np
 import tqdm
 import matplotlib.pyplot as plt
 from math import ceil
+import argparse
 from scipy.stats import zscore
 
 # -- Pytorch imports --
@@ -19,7 +20,7 @@ import lightning as L
 # -- Project imports --
 from ae_encoder import CNN_encoder, CNN_LSTM_encoder
 from ae_decoder import CNN_decoder, CNN_LSTM_decoder
-from ae_litmodel import LitAutoEncoder
+from ae_litmodel import LitAutoEncoder, LSTM_AE
 from ae_dataloader import TimeSeriesDataset
 from utils.plotting import *
 from utils.config_reader import read_config
@@ -44,41 +45,32 @@ def setup_dataloader() -> tuple[DataLoader, TimeSeriesDataset]:
    
     kwargs = {'num_workers': 1, 'pin_memory': True} if USE_CUDA else {'num_workers': CPUAccelerator().auto_device_count(), 'pin_memory': False}
         
-    test_dataloader = DataLoader(test_dataset, batch_size=TEST_BATCH_SIZE, shuffle=False, drop_last=False, **kwargs)
+    test_dataloader = DataLoader(test_dataset, batch_size=TEST_BATCH_SIZE, shuffle=False, drop_last=True, **kwargs)
     
     return test_dataloader, test_dataset
 
 def setup_model(input_shape: tuple) -> tuple[LitAutoEncoder]:
     
     match MODEL_TYPE:
-        case 'CNN':
+        case 'AE_CNN':
+            # Init the lightning autoencoder
             cnn_encoder = CNN_encoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=ENCODER_LAYERS)
             cnn_decoder = CNN_decoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=DECODER_LAYERS)
-
-            autoencoder = LitAutoEncoder.load_from_checkpoint(
-                                        checkpoint, 
-                                        encoder=cnn_encoder, 
-                                        decoder=cnn_decoder,
-                                        input_shape=input_shape,
-                                        latent_dim=LATENT_DIM,
-                                        map_location=DEVICE
-                                        )
-        
-        case 'LSTM':
+            autoencoder = LitAutoEncoder(cnn_encoder, cnn_decoder, lr=LR)
+        case 'AE_LSTMCNN':
             SEQUENCE_LENGTH = int(model_parameters['sequence_length'])
             LSTM_OUT_DIM = int(model_parameters['lstm_out_dim'])
             LSTM_IN_DIM = int(model_parameters['lstm_in_dim'])
             LSTM_HIDDEN_CHANNELS = list(ast.literal_eval(model_parameters['lstm_hidden_channels']))
             cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=LSTM_OUT_DIM, h_lstm_chan=LSTM_HIDDEN_CHANNELS, cpu_alloc=INCLUDE_CPU_ALLOC)
             cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=LSTM_IN_DIM, lstm_out_dim=1, h_lstm_chan=LSTM_HIDDEN_CHANNELS, cpu_alloc=INCLUDE_CPU_ALLOC, seq_len=SEQUENCE_LENGTH)
-            autoencoder = LitAutoEncoder.load_from_checkpoint(
-                                        checkpoint, 
-                                        encoder=cnn_lstm_encoder, 
-                                        decoder=cnn_lstm_decoder,
-                                        input_shape=input_shape,
-                                        latent_dim=LATENT_DIM,
-                                        map_location=DEVICE
-                                        )
+            autoencoder = LitAutoEncoder(cnn_lstm_encoder, cnn_lstm_decoder, lr=LR)
+        case 'AE_LSTMPLAIN':
+            HIDDEN_SIZE = int(model_parameters['hidden_size'])
+            autoencoder = LSTM_AE(window_size=WINDOW_SIZE, channels=CHANNELS, hidden_size=HIDDEN_SIZE, latent_size=LATENT_DIM, device=DEVICE, lr=LR)
+        
+        case _:
+            raise ValueError(f'Invalid model type: {MODEL_TYPE}')
 
     return autoencoder
 
@@ -88,7 +80,7 @@ def run_test(autoencoder: L.LightningModule,
              test_date_range: np.ndarray,
              nodes_count: int,
              save_rec_err_to_parquet: bool = True,
-             plot_rec_err: bool = True,
+             plot_rec_err: bool = False,
              test_batch_size: int = 1,
              device: str = 'cpu',
              save_eval_path: str = 'eval'
@@ -101,6 +93,7 @@ def run_test(autoencoder: L.LightningModule,
 
     logging.debug(f"Node len: {node_len}, Full node len: {full_node_len}")
 
+    autoencoder.to(device)
     # Run evaluation on test set
     for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=ceil(len(test_dataset) / test_batch_size)):
         batch = batch.to(device)
@@ -141,8 +134,14 @@ def run_test(autoencoder: L.LightningModule,
         try:
             stats_df = pd.DataFrame(test_recon_mae_np, index=hostnames, columns=test_date_range[0:len(test_recon_mae_np[0])].astype(str))
             stats_df.to_parquet(os.path.join(save_eval_path, 'recon_error.parquet'))
-        except:
-            logging.error('Error while saving recon_error to parquet')
+        except Exception as e:
+            logging.error('Error while saving recon_error to parquet: ', e)
+            
+            # Try to just save the numpy array
+            try:
+                np.save(os.path.join(save_eval_path, 'recon_error.npy'), test_recon_mae_np)
+            except Exception as e:
+                logging.error('Error while saving recon_error to numpy array: ', e)
             
     if plot_rec_err:
         # Display the reconstruction error over time manually
@@ -230,14 +229,30 @@ def plot_z_scores(test_recon_mae_np: np.ndarray,
     
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
+    logging.debug(f'Starting evaluation...')
+    
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('--model_type', type=str, default=None, help='Type of model to use', choices=['CNN', 'LSTMCNN', 'LSTMPLAIN'])
+    argparser.add_argument('--config', type=str, default='config.ini', help='Path to config file')
+    args = argparser.parse_args()
     
     USE_CUDA = torch.cuda.is_available()
     DEVICE = torch.device('cuda:0' if USE_CUDA else 'cpu')
 
     # -- Import settings and setup --
-    config_dict = read_config()
+    config_dict = read_config(args.config)
     TEST_BATCH_SIZE = int(config_dict['EVALUATION']['BATCH_SIZE'])
     LOGS_PATH = config_dict['EVALUATION']['logs_path']
+    EXPERIMENT_NAME = config_dict['EVALUATION']['experiment_name']
+    MODEL_TYPE = config_dict['EVALUATION']['model_name']
+    if args.model_type is not None:
+        MODEL_TYPE = args.model_type if 'AE_' in args.model_type else f'AE_{args.model_type}'
+        
+    print(f'Using model: {MODEL_TYPE}')
+    
+    LOGS_PATH = os.path.join(LOGS_PATH, MODEL_TYPE, EXPERIMENT_NAME)
+    
     PLOT_ZSCORES = config_dict['EVALUATION']['plot_zscores'].lower() == 'true'
     PLOT_REC_ERROR = config_dict['EVALUATION']['plot_rec_error'].lower() == 'true'
     # ------------------ #
@@ -255,6 +270,8 @@ if __name__ == "__main__":
     TEST_SLIDE = int(model_parameters['test_slide'])
     WINDOW_SIZE = int(model_parameters['window_size'])
     TRAIN_SLIDE = int(model_parameters['train_slide'])
+    LR = float(model_parameters['learning_rate'])
+    CHANNELS = 4
     ENCODER_LAYERS = ast.literal_eval(model_parameters['encoder_layers'])
     DECODER_LAYERS = ast.literal_eval(model_parameters['decoder_layers'])
 
@@ -263,10 +280,10 @@ if __name__ == "__main__":
     PROCESSED_PATH = params['PREPROCESSING']['processed_data_dir']
     TEST_DATES_RANGE = params['PREPROCESSING']['test_date_range']
 
-    MODEL_TYPE = params['TRAINING']['model_type']
+    # MODEL_TYPE = params['TRAINING']['model_type']
 
     path = os.path.join(os.getcwd(), LOGS_PATH, 'checkpoints')
-    save_eval_path = os.path.join(os.getcwd(), LOGS_PATH, f'eval-{TEST_DATES_RANGE.split(",")}')
+    save_eval_path = os.path.join(os.getcwd(), LOGS_PATH, f'eval')
 
     if not os.path.exists(save_eval_path):
         os.makedirs(save_eval_path)
@@ -277,7 +294,6 @@ if __name__ == "__main__":
 
     checkpoint = os.path.join(path, filename)
 
-    logging.basicConfig(level=logging.DEBUG)
     test_dataloader, test_dataset = setup_dataloader()
     
     test_len = len(test_dataset)
@@ -297,7 +313,8 @@ if __name__ == "__main__":
                                 test_date_range=test_date_range,
                                 nodes_count=NODES_COUNT,
                                 save_rec_err_to_parquet=True,
-                                plot_rec_err=PLOT_REC_ERROR
+                                plot_rec_err=PLOT_REC_ERROR,
+                                save_eval_path=save_eval_path,
                                 )
 
     logging.debug(f'Dates range test: start {test_date_range.min()} end {test_date_range.max()}')
