@@ -2,7 +2,7 @@ import configparser
 
 def read_config(file: str = 'config.ini') -> dict:
     config = configparser.ConfigParser()
-    config.read('config.ini')
+    config.read(file)
 
     # Create a dictionary of all the sections
     config_dict = {}
