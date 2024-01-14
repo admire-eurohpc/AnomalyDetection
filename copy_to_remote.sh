@@ -8,7 +8,7 @@ eagle_path="/home/users/$username/pl0134-01/project_data/admire-project"
 echo "Copying files to the remote server: $remote_server:$eagle_path"
 
 # Create a list of folders and files to copy
-folders=(data admire notebooks scripts README.md requirements.txt config.ini environment.yml requirements.txt)
+folders=(data admire notebooks scripts README.md requirements.txt config.ini environment.yml requirements.txt slurm_run_eval.sh slurm_run_training.sh)
 
 # Iterate over the list of folders and files
 for folder in "${folders[@]}"
