@@ -46,6 +46,9 @@ DEVICE = torch.device('cuda:0' if USE_CUDA else 'cpu')
 config_dict = read_config()
 TEST_BATCH_SIZE = int(config_dict['EVALUATION']['BATCH_SIZE'])
 LOGS_PATH = config_dict['EVALUATION']['logs_path']
+MODEL_NAME = config_dict['EVALUATION']['model_name']
+EXPERIMENT_NAME = config_dict['EVALUATION']['experiment_name']
+LOGS_PATH = os.path.join(LOGS_PATH, MODEL_NAME, EXPERIMENT_NAME)
 PLOT_ZSCORES = config_dict['EVALUATION']['plot_zscores'].lower() == 'true'
 PLOT_REC_ERROR = config_dict['EVALUATION']['plot_rec_error'].lower() == 'true'
 # ------------------ #
@@ -74,7 +77,7 @@ TEST_DATES_RANGE = params['PREPROCESSING']['test_date_range']
 MODEL_TYPE = params['TRAINING']['model_type']
 
 path = os.path.join(os.getcwd(), LOGS_PATH, 'checkpoints')
-save_eval_path = os.path.join(os.getcwd(), LOGS_PATH, f'eval-{TEST_DATES_RANGE.split(",")}')
+save_eval_path = os.path.join(os.getcwd(), LOGS_PATH, f'eval')
 
 if not os.path.exists(save_eval_path):
     os.makedirs(save_eval_path)
@@ -101,9 +104,6 @@ def multiprocess_batch(batch: torch.Tensor):
         p=(counts)/float(batch.shape[1]*batch.shape[2])
         entropy.append(float(torch.sum(p* torch.log2(p))*-1))
     return entropy
-
-
-
 
 def setup_dataloader() -> tuple[DataLoader, TimeSeriesDataset]:
     # train_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_PATH}/train/", 
