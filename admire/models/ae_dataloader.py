@@ -109,7 +109,7 @@ class TimeSeriesDataset(Dataset):
         '''
         Returns the number of windows in the time series given the window size and slide length
         '''
-        return ((self.time_series.shape[1] - self.window_size)// self.slide_length) + 1 # TODO: Check this thoroughly
+        return self.nodes_count*self.get_node_full_len()
 
     def __getitem__(self, idx): 
         start = idx * self.slide_length # Each window starts at a multiple of the slide length
@@ -137,8 +137,8 @@ class TimeSeriesDataset(Dataset):
         full_node_len = (self.time_series.shape[1]//self.nodes_count)
         if full_node_len % self.slide_length == 0:
             return ((self.time_series.shape[1]//self.nodes_count)//self.slide_length)
-        else: #po wprowadzeniu cutoff_value, nie powinno to nigdy się aktywować #TODO zwrócić error gdy aktywowane
-            return ((self.time_series.shape[1]//self.nodes_count)//self.slide_length) + full_node_len%self.slide_length
+        else:
+            raise RuntimeError("Inappropriate node length. Time series length modulo self.slide_length should return 0")
     
     def get_input_layer_size_flattened(self):
         return self.time_series.shape[0] * self.time_series.shape[1] * self.window_size
@@ -165,8 +165,9 @@ if __name__ == '__main__':
     dataset = TimeSeriesDataset(data_dir="data/processed/all_march_top200_withalloc_and_augm_fixed_hours/test", 
                                 normalize=True, 
                                 window_size=60, 
-                                slide_length=10)
+                                slide_length=1)
     print(np.shape(dataset.get_time_series()))
+    print(len(dataset))
     d = next(iter(dataset))
     print(d.shape)
     print(d)
