@@ -115,7 +115,7 @@ def setup_dataloader() -> tuple[DataLoader, TimeSeriesDataset]:
                                         normalize=True, 
                                         #external_transform=train_dataset.get_transform(), # Use same transform as for training
                                         window_size=WINDOW_SIZE, 
-                                        slide_length=1)
+                                        slide_length=10)
     
     
    

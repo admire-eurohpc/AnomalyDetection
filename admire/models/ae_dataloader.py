@@ -75,7 +75,11 @@ class TimeSeriesDataset(Dataset):
                     .to_numpy().T.reshape(len(columns), 1, -1) 
                     
             #logger.debug(f'Loaded data shape: {_data.shape}')
-                    
+
+
+            if slide_length != 1:
+                cutoff_value = np.shape(_data)[2]%self.slide_length
+                _data = _data[:,:,:-cutoff_value]
             if self.time_series is None:
                 self.time_series = _data
             else:
@@ -133,7 +137,7 @@ class TimeSeriesDataset(Dataset):
         full_node_len = (self.time_series.shape[1]//self.nodes_count)
         if full_node_len % self.slide_length == 0:
             return ((self.time_series.shape[1]//self.nodes_count)//self.slide_length)
-        else:
+        else: #po wprowadzeniu cutoff_value, nie powinno to nigdy się aktywować #TODO zwrócić error gdy aktywowane
             return ((self.time_series.shape[1]//self.nodes_count)//self.slide_length) + full_node_len%self.slide_length
     
     def get_input_layer_size_flattened(self):
@@ -161,7 +165,7 @@ if __name__ == '__main__':
     dataset = TimeSeriesDataset(data_dir="data/processed/all_march_top200_withalloc_and_augm_fixed_hours/test", 
                                 normalize=True, 
                                 window_size=60, 
-                                slide_length=30)
+                                slide_length=10)
     print(np.shape(dataset.get_time_series()))
     d = next(iter(dataset))
     print(d.shape)
