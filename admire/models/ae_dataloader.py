@@ -56,9 +56,9 @@ class TimeSeriesDataset(Dataset):
 
         self.dates_range = {}
         _dates = pd.read_parquet(os.path.join(data_dir, filenames[0]), columns=['date'])
-        self.dates_range['start'] = pd.to_datetime(_dates['date'].min())
-        self.dates_range['end'] =  pd.to_datetime(_dates['date'].max())
-
+        self.dates_range['start'] = pd.to_datetime(_dates['date'].min(), utc=True)
+        self.dates_range['end'] =  pd.to_datetime(_dates['date'].max(), utc=True)
+        
         # Concatenate data into one time series array (numpy array)
         # TODO: This is not efficient as for bigger datasets may load too much data into memory
         # but it works for now

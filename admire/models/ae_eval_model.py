@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from math import ceil
 import argparse
 from scipy.stats import zscore
+from datetime import datetime
 
 # -- Pytorch imports --
 import torch
@@ -45,7 +46,7 @@ def setup_dataloader() -> tuple[DataLoader, TimeSeriesDataset]:
    
     kwargs = {'num_workers': 1, 'pin_memory': True} if USE_CUDA else {'num_workers': CPUAccelerator().auto_device_count(), 'pin_memory': False}
         
-    test_dataloader = DataLoader(test_dataset, batch_size=TEST_BATCH_SIZE, shuffle=False, drop_last=True, **kwargs)
+    test_dataloader = DataLoader(test_dataset, batch_size=TEST_BATCH_SIZE, shuffle=False, drop_last=False, **kwargs)
     
     return test_dataloader, test_dataset
 
@@ -305,7 +306,15 @@ if __name__ == "__main__":
     autoencoder.freeze()
 
     test_date_range = test_dataset.get_dates_range()
-    test_date_range = pd.date_range(start=test_date_range['start'], end=test_date_range['end'], freq=f'{TEST_SLIDE}min', tz='Europe/Warsaw') # TODO set frequency dynamically?
+    print(test_date_range)
+    print(test_date_range['start'].tzinfo)
+    
+    test_date_range = pd.date_range(
+        start=test_date_range['start'], 
+        end=test_date_range['end'], 
+        freq=f'{TEST_SLIDE}min', 
+        tz=test_date_range['start'].tzinfo
+    ) 
 
     test_recon_mae_np = run_test(autoencoder=autoencoder,
                                 test_dataloader=test_dataloader,
@@ -315,6 +324,7 @@ if __name__ == "__main__":
                                 save_rec_err_to_parquet=True,
                                 plot_rec_err=PLOT_REC_ERROR,
                                 save_eval_path=save_eval_path,
+                                test_batch_size=TEST_BATCH_SIZE,
                                 )
 
     logging.debug(f'Dates range test: start {test_date_range.min()} end {test_date_range.max()}')
