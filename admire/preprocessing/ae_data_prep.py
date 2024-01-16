@@ -12,11 +12,25 @@ from tqdm import tqdm
 from anomaly import Anomaly
 import yaml
 import multiprocessing as mp
+import argparse
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--config_filename', type=str, default='config.ini', help='Config filename')
+# Add augument flag
+parser.add_argument('--augument', action='store_true', help='Augument data')
+
+if parser.parse_args().config_filename is not None:
+    config_filename = parser.parse_args().config_filename
+if parser.parse_args().augument is not None:
+    AUGUMENT = parser.parse_args().augument
+    
+print(AUGUMENT)
+
 config = configparser.ConfigParser()
-config.read('config.ini')
+config.read(config_filename)
 
 with open('anomalies.yaml') as f:
     anomalies = yaml.load(f, yaml.UnsafeLoader)
@@ -175,28 +189,31 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: datetime, date_end:
     assert shape_before_merge[0] == _df.shape[0], "length of the artificial dataframe before and after merge should be the same"
 
     #TODO: make a function to perform augmentation, code became to large and redundant in places
-    # augment_step = random.randint(60, 90)
-    # augment_len = random.randint(15, 45)
+    if AUGUMENT:
+        augment_step = random.randint(60, 90)
+        augment_len = random.randint(15, 45)
 
-    # spike_all_features_iter = (([True]*augment_len + [False]*augment_step)*5 + ([False]*(augment_step + augment_len))*2)
-    # spike_only_cpu_feature_iter = (([False]*(augment_step + augment_len))*5 + ([True]*augment_step + [False]*augment_len)*2)
+        spike_all_features_iter = (([True]*augment_len + [False]*augment_step)*5 + ([False]*(augment_step + augment_len))*2)
+        spike_only_cpu_feature_iter = (([False]*(augment_step + augment_len))*5 + ([True]*augment_step + [False]*augment_len)*2)
 
     # Fill missing values with **fill_value** which is 0 by default
     match data_set:
         case 'train':
             _df['hostname'] = host
-            # _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_all_features_iter, 1)['power'])
-            # _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_all_features_iter, 1)['cpu1'])
-            # _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_all_features_iter, 1)['cpu2'])
-            # _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_only_cpu_feature_iter, 2)['power'])
-            # _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_only_cpu_feature_iter, 2)['cpu1'])
-            # _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_only_cpu_feature_iter, 2)['cpu2'])
+            if AUGUMENT:
+                _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_all_features_iter, 1)['power'])
+                _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_all_features_iter, 1)['cpu1'])
+                _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_all_features_iter, 1)['cpu2'])
+                _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_only_cpu_feature_iter, 2)['power'])
+                _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_only_cpu_feature_iter, 2)['cpu1'])
+                _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_only_cpu_feature_iter, 2)['cpu2'])
             _df['power'] = _df['power'].fillna(random.randint(138, 144))
             _df['cpu1'] = _df['cpu1'].fillna(random.randint(28, 30))
             _df['cpu2'] = _df['cpu2'].fillna(random.randint(28, 30))
             if include_cpu_alloc:
-                # _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_all_features_iter, 1)['cpus_alloc'])
-                # _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_only_cpu_feature_iter, 1)['cpus_alloc'])
+                if AUGUMENT:
+                    _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_all_features_iter, 1)['cpus_alloc'])
+                    _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_only_cpu_feature_iter, 1)['cpus_alloc'])
                 _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
 
         case 'test':

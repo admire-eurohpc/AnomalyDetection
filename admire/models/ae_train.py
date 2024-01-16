@@ -23,7 +23,20 @@ from ae_dataloader import TimeSeriesDataset
 from utils.config_reader import read_config
 from ae_eval_model import run_test
 
-config_dict = read_config()
+# Args
+parser = argparse.ArgumentParser()
+parser.add_argument('--model_type', type=str, default='', choices=['CNN', 'LSTMCNN', 'LSTMPLAIN'], help='Model type to train')
+parser.add_argument('--experiment_name', type=str, default='', help='Expeiment name')
+parser.add_argument('--config_path', type=str, default='config.ini', help='Path to config file')
+
+if parser.parse_args().model_type is not None:
+    MODEL_TYPE = parser.parse_args().model_type
+if parser.parse_args().experiment_name is not None:
+    experiment_name = parser.parse_args().experiment_name
+if parser.parse_args().config_path is not None:
+    config_path = parser.parse_args().config_path
+
+config_dict = read_config(config_path)
 
 # PREPROCESSING
 NODES_COUNT = int(config_dict['PREPROCESSING']['nodes_count_to_process'])
@@ -36,17 +49,10 @@ SHUFFLE = config_dict['TRAINING']['SHUFFLE'].lower() == 'true'
 VAL_SHUFFLE = config_dict['TRAINING']['VAL_SHUFFLE'].lower() == 'true'
 TENSORBOARD_LOGGING_PATH = config_dict['TRAINING']['TENSORBOARD_LOGGING_PATH']
 IMG_SAVE_DIRNAME = config_dict['TRAINING']['IMG_SAVE_DIRNAME']
-MODEL_TYPE = config_dict['TRAINING']['MODEL_TYPE']
+if MODEL_TYPE == '':
+    MODEL_TYPE = config_dict['TRAINING']['MODEL_TYPE']
 ENABLE_CHECKPOINTING = config_dict['TRAINING']['ENABLE_CHECKPOINTING'].lower() == 'true'
 SAVE_TOP_K_CHECKPOINTS = int(config_dict['TRAINING']['SAVE_TOP_K'])
-
-# Args
-parser = argparse.ArgumentParser()
-parser.add_argument('--model_type', type=str, default=MODEL_TYPE, choices=['CNN', 'LSTMCNN', 'LSTMPLAIN'], help='Model type to train')
-
-if parser.parse_args().model_type is not None:
-    MODEL_TYPE = parser.parse_args().model_type
-
 
 # EVALUATION
 EVALUATION_BATCH_SIZE = int(config_dict['EVALUATION']['BATCH_SIZE'])
@@ -65,7 +71,7 @@ LR = float(config_dict[model_parameters_key]['LEARNING_RATE'])
 
 # Create directories for logging and saving images
 _tmp_name = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
-logger = TensorBoardLogger(save_dir=TENSORBOARD_LOGGING_PATH, name=f"AE_{MODEL_TYPE}", version=f'{_tmp_name}')
+logger = TensorBoardLogger(save_dir=TENSORBOARD_LOGGING_PATH, name=f"AE_{MODEL_TYPE}", version=f'e_{experiment_name}__{_tmp_name}')
 image_save_path = os.path.join(logger.log_dir, IMG_SAVE_DIRNAME)
 
 if not os.path.exists(image_save_path):
