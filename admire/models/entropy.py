@@ -28,8 +28,6 @@ from ae_encoder import CNN_encoder, CNN_LSTM_encoder
 from ae_decoder import CNN_decoder, CNN_LSTM_decoder
 from ae_litmodel import LitAutoEncoder
 from ae_dataloader import TimeSeriesDataset
-from data_exploration import kmeans_clustering
-from utils.plotting import subplots_clustering
 from utils.plotting import *
 from utils.config_reader import read_config
 
@@ -95,8 +93,6 @@ numba_logger.setLevel(logging.WARNING)
 
 # ------------------ #
 
-ENTROPY_WINDOW_SIZE = 180
-
 def multiprocess_batch(batch: torch.Tensor):
     entropy = []
     for i in range(0,batch.shape[0]):
@@ -115,7 +111,7 @@ def setup_dataloader() -> tuple[DataLoader, TimeSeriesDataset]:
                                         normalize=True, 
                                         #external_transform=train_dataset.get_transform(), # Use same transform as for training
                                         window_size=WINDOW_SIZE, 
-                                        slide_length=10)
+                                        slide_length=1)
     
     
    
@@ -128,13 +124,12 @@ def setup_dataloader() -> tuple[DataLoader, TimeSeriesDataset]:
 if __name__ == "__main__":
     test_dataset, test_dataloader = setup_dataloader()
 
-    print(len(test_dataset))
-    entropy_list = []
+    print("dataloader length: ", len(test_dataloader))
     node_len = test_dataset.get_node_len()
     full_node_len = test_dataset.get_node_full_len()
     print("node len: ", node_len, "full_node_len: ", full_node_len)
 
-    processes = []
+    entropy_list = []
     with mp.Pool(24) as pool:
         for x in tqdm.tqdm(pool.imap(multiprocess_batch, test_dataloader),
                                 desc="Running entropy calculation reconstruction error", 
@@ -146,16 +141,19 @@ if __name__ == "__main__":
 
     entropy_stripped = []
     for i in range(NODES_COUNT):
-        print(len(entropy_list[(i*full_node_len): (i*full_node_len) + node_len]))
         entropy_stripped.append(entropy_list[(i*full_node_len): (i*full_node_len) + node_len])
         
     logging.debug(f"Test reconstruction error stripped len: {len(entropy_stripped)}")
 
-    test_recon_mae_np = np.reshape(entropy_stripped, (NODES_COUNT, node_len))
-    test_recon_mae_list = test_recon_mae_np.tolist()
+    test_entropy_np = np.reshape(entropy_stripped, (NODES_COUNT, node_len))
+    test_entropy_list = test_entropy_np.tolist()
 
-    plot_recon_error_each_node(reconstruction_errors = test_recon_mae_list, 
-                                time_axis = test_dataset.get_dates_range(), 
+    test_date_range = test_dataset.get_dates_range()
+    test_date_range = pd.date_range(start=test_date_range['start'], end=test_date_range['end'], freq='10min', tz='Europe/Warsaw') # TODO set frequency dynamically?
+
+
+    plot_recon_error_each_node(reconstruction_errors = test_entropy_list, 
+                                time_axis = test_date_range, 
                                 n_nodes = 200, 
                                 hostnames = test_dataset.get_filenames(), 
                                 savedir=save_eval_path

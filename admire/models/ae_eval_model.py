@@ -11,9 +11,11 @@ from math import ceil
 import argparse
 from scipy.stats import zscore
 from datetime import datetime
+from itertools import chain
 
 # -- Pytorch imports --
 import torch
+import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
 from lightning.pytorch.accelerators import CPUAccelerator
 import lightning as L
@@ -31,14 +33,9 @@ from utils.config_reader import read_config
 
 
 def setup_dataloader() -> tuple[DataLoader, TimeSeriesDataset]:
-    train_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_PATH}/train/", 
-                                    normalize=True, 
-                                    window_size=WINDOW_SIZE, 
-                                    slide_length=TRAIN_SLIDE)
 
     test_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_PATH}/test/", 
                                         normalize=True, 
-                                        external_transform=train_dataset.get_transform(), # Use same transform as for training
                                         window_size=WINDOW_SIZE, 
                                         slide_length=TEST_SLIDE)
     
@@ -75,11 +72,30 @@ def setup_model(input_shape: tuple) -> tuple[LitAutoEncoder]:
 
     return autoencoder
 
+def multiprocess_batch(batch: torch.Tensor):
+    entropy = []
+
+    for i in range(0,batch.shape[0]):
+        _,counts=torch.unique(batch[i].data.flatten(start_dim=0),dim=0,return_counts=True)
+        p=(counts)/float(batch.shape[1]*batch.shape[2])
+        entropy.append(float(torch.sum(p* torch.log2(p))*-1))
+
+    return entropy
+
+def multiprocess_recon_error(batch: torch.Tensor):
+    batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
+    err = torch.mean(batch_err, dim=(1,2))
+    err_detached = err.cpu().numpy()
+    err_detached = err_detached.flatten()
+    return err_detached
+            
+
 def run_test(autoencoder: L.LightningModule, 
              test_dataloader: DataLoader, 
              test_dataset: TimeSeriesDataset,
              test_date_range: np.ndarray,
              nodes_count: int,
+             use_entropy: bool = True,
              save_rec_err_to_parquet: bool = True,
              plot_rec_err: bool = False,
              test_batch_size: int = 1,
@@ -92,23 +108,34 @@ def run_test(autoencoder: L.LightningModule,
     node_len = test_dataset.get_node_len()
     full_node_len = test_dataset.get_node_full_len()
 
-    logging.debug(f"Node len: {node_len}, Full node len: {full_node_len}")
+    logging.debug(f"Node len: {node_len}, Full node len: {full_node_len}, Dataset len: {len(test_dataset)}")
 
-    autoencoder.to(device)
-    # Run evaluation on test set
-    for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=ceil(len(test_dataset) / test_batch_size)):
-        batch = batch.to(device)
-        batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
-        
-        err = torch.mean(batch_err, dim=(1,2))
-        
-        err_detached = err.cpu().numpy()
-        
-        # Flatten the error tensor
-        err_detached = err_detached.flatten()
-        
-        
-        test_recon_mae += err_detached.tolist()
+    if device == 'cpu':
+        logging.debug(f"Calculation running on {mp.cpu_count()} cpus.")
+        test_recon_mae = []
+
+        with mp.Pool(mp.cpu_count()) as pool:
+            for idx, batch in tqdm.tqdm(pool.imap(multiprocess_recon_error, test_dataloader),
+                                    desc="Running test reconstruction error", 
+                                    total=len(test_dataloader)):
+                test_recon_mae += err_detached.tolist()
+    else:
+
+        autoencoder.to(device)
+        # Run evaluation on test set
+        for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=ceil(len(test_dataset) / test_batch_size)):
+            batch = batch.to(device)
+            batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
+            
+            err = torch.mean(batch_err, dim=(1,2))
+            
+            err_detached = err.cpu().numpy()
+            
+            # Flatten the error tensor
+            err_detached = err_detached.flatten()
+            
+            
+            test_recon_mae += err_detached.tolist()
 
     logging.debug(f"Test reconstruction error len: {len(test_recon_mae)}")
 
@@ -144,6 +171,33 @@ def run_test(autoencoder: L.LightningModule,
             except Exception as e:
                 logging.error('Error while saving recon_error to numpy array: ', e)
             
+    if use_entropy:
+
+        entropy_list = []
+
+        with mp.Pool(24) as pool:
+            for x in tqdm.tqdm(pool.imap(multiprocess_batch, test_dataloader),
+                                    desc="Running entropy calculation reconstruction error", 
+                                    total=len(test_dataloader)):
+                entropy_list.append(x)
+
+
+        entropy_list= list(chain.from_iterable(entropy_list))
+
+        entropy_stripped = []
+        for i in range(NODES_COUNT):
+            entropy_stripped.append(entropy_list[(i*full_node_len): (i*full_node_len) + node_len])
+            
+        logging.debug(f"Test reconstruction error stripped len: {len(entropy_stripped)}")
+
+        test_entropy_np = np.reshape(entropy_stripped, (NODES_COUNT, node_len))
+
+        test_recon_mae_np = test_entropy_np*test_recon_mae_np
+
+        test_recon_mae_list = test_recon_mae_np.tolist()
+        agg_recon_err = np.mean(test_recon_mae_np, axis=0)
+
+
     if plot_rec_err:
         # Display the reconstruction error over time manually
         logging.debug(f"Plotting reconstruction error over time")
@@ -312,7 +366,7 @@ if __name__ == "__main__":
     test_date_range = pd.date_range(
         start=test_date_range['start'], 
         end=test_date_range['end'], 
-        freq=f'{TEST_SLIDE}min', 
+        freq=f'{TEST_SLIDE}min',
         tz=test_date_range['start'].tzinfo
     ) 
 
@@ -321,10 +375,12 @@ if __name__ == "__main__":
                                 test_dataset=test_dataset,
                                 test_date_range=test_date_range,
                                 nodes_count=NODES_COUNT,
+                                use_entropy = True,
                                 save_rec_err_to_parquet=True,
                                 plot_rec_err=PLOT_REC_ERROR,
-                                save_eval_path=save_eval_path,
                                 test_batch_size=TEST_BATCH_SIZE,
+                                device=DEVICE,
+                                save_eval_path=save_eval_path,
                                 )
 
     logging.debug(f'Dates range test: start {test_date_range.min()} end {test_date_range.max()}')

@@ -109,7 +109,12 @@ class TimeSeriesDataset(Dataset):
         '''
         Returns the number of windows in the time series given the window size and slide length
         '''
+        '''
         return self.nodes_count*self.get_node_full_len()
+        The expression above is simpler and yields the same value as current solution, however it results in uncommon error
+        https://github.com/autonomousvision/carla_garage/issues/12
+        '''
+        return ((self.time_series.shape[1] - self.window_size)// self.slide_length) + 1 # TODO: Check this thoroughly
 
     def __getitem__(self, idx): 
         start = idx * self.slide_length # Each window starts at a multiple of the slide length
@@ -131,7 +136,7 @@ class TimeSeriesDataset(Dataset):
             return ((self.time_series.shape[1]//self.nodes_count - self.window_size)// self.slide_length)
         else : 
             return ((self.time_series.shape[1]//self.nodes_count - self.window_size)// self.slide_length)+1
-    
+
     def get_node_full_len(self):
         '''Returns the full node length including last N samples'''
         full_node_len = (self.time_series.shape[1]//self.nodes_count)
