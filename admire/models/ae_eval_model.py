@@ -96,6 +96,7 @@ def run_test(autoencoder: L.LightningModule,
              test_date_range: np.ndarray,
              nodes_count: int,
              use_entropy: bool = True,
+             save_entropy_to_parquet: bool = True,
              save_rec_err_to_parquet: bool = True,
              plot_rec_err: bool = False,
              test_batch_size: int = 1,
@@ -196,7 +197,13 @@ def run_test(autoencoder: L.LightningModule,
 
         test_recon_mae_list = test_recon_mae_np.tolist()
         agg_recon_err = np.mean(test_recon_mae_np, axis=0)
-
+        
+        if save_entropy_to_parquet:
+            try:
+                stats_df = pd.DataFrame(test_entropy_np, index=hostnames, columns=test_date_range[0:len(test_entropy_np[0])].astype(str))
+                stats_df.to_parquet(os.path.join(save_eval_path, 'entropy.parquet'))
+            except Exception as e:
+                logging.error('Error while saving entropy to parquet: ', e)
 
     if plot_rec_err:
         # Display the reconstruction error over time manually
@@ -376,6 +383,7 @@ if __name__ == "__main__":
                                 test_date_range=test_date_range,
                                 nodes_count=NODES_COUNT,
                                 use_entropy = True,
+                                save_entropy_to_parquet = True,
                                 save_rec_err_to_parquet=True,
                                 plot_rec_err=PLOT_REC_ERROR,
                                 test_batch_size=TEST_BATCH_SIZE,
