@@ -251,16 +251,19 @@ if __name__ == "__main__":
     autoencoder.eval()
     autoencoder.freeze()
     
-    run_test(autoencoder=autoencoder, 
-                test_dataloader=eval_dataloader,
-                test_dataset=test_dataset,
-                test_date_range=test_date_range,
-                nodes_count=NODES_COUNT,
-                save_rec_err_to_parquet=True,
-                test_batch_size=EVALUATION_BATCH_SIZE,
-                device=device,
-                save_eval_path=save_path,
-                )
+    run_test(autoencoder=autoencoder,
+                                test_dataloader=test_dataloader,
+                                test_dataset=test_dataset,
+                                test_date_range=test_date_range,
+                                nodes_count=NODES_COUNT,
+                                use_entropy = True,
+                                save_entropy_to_parquet = True,
+                                save_rec_err_to_parquet=True,
+                                plot_rec_err=True,
+                                test_batch_size=EVALUATION_BATCH_SIZE,
+                                device=device,
+                                save_eval_path=save_path,
+                                )
     
     logging.debug('Evaluation finished.')
     # ---------------- #
