@@ -141,3 +141,94 @@ anomalies:
     date_end: "2023-10-25 13:00:00"
     tags:
       - "down"
+  - id: 21
+    description: "30 węzłów zgłasza błędy, jedyny taki przypadek w całym miesiącu"
+    severity: 1
+    date_start: "2023-10-25 09:00:00"
+    date_end: "2023-10-25 13:00:00"
+    tags:
+      - "down"
+  - id: 22
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 1
+    date_start: "2023-11-26 03:00:00"
+    date_end: "2023-11-26 05:00:00"
+    tags:
+      - "down" 
+  - id: 23
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 1
+    date_start: "2023-11-28 00:00:00"
+    date_end: "2023-11-28 02:00:00"
+    tags:
+      - "down" 
+  - id: 24
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 1
+    date_start: "2023-11-29 20:00:00"
+    date_end: "2023-11-29 22:00:00"
+    tags:
+      - "down"
+  - id: 25
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 1
+    date_start: "2023-12-01 19:00:00"
+    date_end: "2023-12-01 21:00:00"
+    tags:
+      - "down"
+  - id: 26
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 1
+    date_start: "2023-12-02 16:00:00"
+    date_end: "2023-12-02 18:00:00"
+    tags:
+      - "down"
+  - id: 27
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 5
+    date_start: "2023-12-05 11:00:00"
+    date_end: "2023-12-06 12:00:00"
+    tags:
+      - "down"
+  - id: 28
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 1
+    date_start: "2023-12-08 20:00:00"
+    date_end: "2023-12-08 22:00:00"
+    tags:
+      - "down"
+  - id: 29
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 1
+    date_start: "2023-12-13 13:00:00"
+    date_end: "2023-12-13 15:00:00"
+    tags:
+      - "down"
+  - id: 30
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 1
+    date_start: "2023-12-15 02:00:00"
+    date_end: "2023-12-15 04:00:00"
+    tags:
+      - "down"
+  - id: 31
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 5
+    date_start: "2023-12-19 11:00:00"
+    date_end: "2023-12-19 15:00:00"
+    tags:
+      - "down"
+  - id: 32
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 5
+    date_start: "2023-12-20 15:00:00"
+    date_end: "2023-12-20 20:00:00"
+    tags:
+      - "down"
+  - id: 33
+    description: "Od 20 listopada występuje dość dużo wyłączeń węzłów. Taka sytuacja utrzymuje się do końca grudnia. Zazwyczaj odrzucaliśmy takie momenty. Wydaje mi się, że ten okres jest ciekawy, by wrzucić go na ewaluacje."
+    severity: 5
+    date_start: "2023-12-22 14:00:00"
+    date_end: "2023-12-22 20:00:00"
+    tags:
+      - "down" 
