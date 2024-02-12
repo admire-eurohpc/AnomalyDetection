@@ -152,8 +152,15 @@ class LSTMAE_Decoder(nn.Module):
        
 class LSTM_AE(pl.LightningModule):
     
-    def __init__(self, window_size, hidden_size, latent_size, device, lr, channels = 4,  monitor: str = 'train_loss',
-                monitor_mode: str = 'min',) -> None:
+    def __init__(self, window_size, 
+                 hidden_size, 
+                 latent_size, 
+                 device, 
+                 lr, 
+                 channels = 4,  
+                 monitor: str = 'train_loss',
+                monitor_mode: str = 'min',
+                ) -> None:
         
         super().__init__()
         
@@ -182,7 +189,6 @@ class LSTM_AE(pl.LightningModule):
                                     channels=channels,
         )
         
-        self.criterion = nn.BCEWithLogitsLoss()
         
     def forward(self, x):
         outputs = self.encoder(x)
@@ -214,7 +220,7 @@ class LSTM_AE(pl.LightningModule):
                 'lr_scheduler': scheduler,
                 'monitor': self.monitor,
                 'mode': self.monitor_mode,
-                }
+        }
     
     def training_step(self, batch, batch_idx):
         x = batch
