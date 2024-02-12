@@ -12,6 +12,7 @@ import argparse
 from scipy.stats import zscore
 from datetime import datetime
 from itertools import chain
+import wandb
 
 # -- Pytorch imports --
 import torch
@@ -19,6 +20,7 @@ import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
 from lightning.pytorch.accelerators import CPUAccelerator
 import lightning as L
+from pytorch_lightning.loggers import WandbLogger, Logger
 
 # -- Project imports --
 from ae_encoder import CNN_encoder, CNN_LSTM_encoder
@@ -101,7 +103,8 @@ def run_test(autoencoder: L.LightningModule,
              plot_rec_err: bool = False,
              test_batch_size: int = 1,
              device: str = 'cpu',
-             save_eval_path: str = 'eval'
+             save_eval_path: str = 'eval',
+             wandb_logger: Logger | WandbLogger | None = None
              ) -> np.ndarray:
     logging.debug(f"Running model on test set")
 
@@ -126,7 +129,20 @@ def run_test(autoencoder: L.LightningModule,
         # Run evaluation on test set
         for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=ceil(len(test_dataset) / test_batch_size)):
             batch = batch.to(device)
-            batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
+            
+            try:
+                logging.debug(f"Trying to run test set with autoencoder.encoder(batch)")
+                batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
+            except Exception as e:
+                logging.error(f"Error while running test set: {e}")
+            
+                try:
+                    logging.debug(f"Trying to run test set with autoencoder(batch)")
+                    rec, _ = autoencoder(batch)
+                    batch_err = torch.abs(batch - rec)
+                except Exception as e:
+                    logging.error(f"Error while running test set: {e}")
+                    raise e
             
             err = torch.mean(batch_err, dim=(1,2))
             
@@ -163,6 +179,14 @@ def run_test(autoencoder: L.LightningModule,
         try:
             stats_df = pd.DataFrame(test_recon_mae_np, index=hostnames, columns=test_date_range[0:len(test_recon_mae_np[0])].astype(str))
             stats_df.to_parquet(os.path.join(save_eval_path, 'recon_error.parquet'))
+            
+            # artifact = wandb.Artifact(name="reconstruction_error", type='parquet')
+            # artifact.add_file(os.path.join(save_eval_path, 'recon_error.parquet'))
+            # wandb_run.log_artifact(artifact)
+            
+            wandb_logger.log_table('reconstruction_error', columns = stats_df.columns.to_list(), data = stats_df.to_numpy())
+            
+            
         except Exception as e:
             logging.error('Error while saving recon_error to parquet: ', e)
             

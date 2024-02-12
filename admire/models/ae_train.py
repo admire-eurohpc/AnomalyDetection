@@ -5,6 +5,7 @@ import ast
 from datetime import datetime
 import pandas as pd
 import argparse
+import wandb
 
 # -- Pytorch imports --
 import torch
@@ -14,6 +15,7 @@ import lightning.pytorch as pl
 from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch.profilers import SimpleProfiler
 from lightning.pytorch.accelerators import CPUAccelerator
+from pytorch_lightning.loggers import WandbLogger
 
 # -- Project imports --
 from ae_encoder import CNN_encoder, CNN_LSTM_encoder
@@ -22,10 +24,11 @@ from ae_litmodel import LitAutoEncoder, LSTM_AE
 from ae_dataloader import TimeSeriesDataset
 from utils.config_reader import read_config
 from ae_eval_model import run_test
+from ae_lstm_vae import LSTMVAE, LSTMEncoder, LSTMDecoder
 
 # Args
 parser = argparse.ArgumentParser()
-parser.add_argument('--model_type', type=str, default='', choices=['CNN', 'LSTMCNN', 'LSTMPLAIN'], help='Model type to train')
+parser.add_argument('--model_type', type=str, default='', choices=['CNN', 'LSTMCNN', 'LSTMPLAIN', 'LSTMVAE'], help='Model type to train')
 parser.add_argument('--experiment_name', type=str, default='', help='Expeiment name')
 parser.add_argument('--config_path', type=str, default='config.ini', help='Path to config file')
 
@@ -71,8 +74,28 @@ LR = float(config_dict[model_parameters_key]['LEARNING_RATE'])
 
 # Create directories for logging and saving images
 _tmp_name = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
-logger = TensorBoardLogger(save_dir=TENSORBOARD_LOGGING_PATH, name=f"AE_{MODEL_TYPE}", version=f'e_{experiment_name}__{_tmp_name}')
-image_save_path = os.path.join(logger.log_dir, IMG_SAVE_DIRNAME)
+# logger = TensorBoardLogger(save_dir=TENSORBOARD_LOGGING_PATH, name=f"AE_{MODEL_TYPE}", version=f'e_{experiment_name}__{_tmp_name}')
+
+with open('wandb_private.key', 'r') as f:
+    wandb_key = f.readline()
+    
+    try: 
+        wandb.login(
+            key=wandb_key
+        )
+    except Exception as e:
+        raise ValueError(f'Cannot log in to wandb: {e}')
+    
+logger = WandbLogger(
+    save_dir=TENSORBOARD_LOGGING_PATH,
+    name=f"AE_{MODEL_TYPE}",
+    version=f'e_{experiment_name}__{_tmp_name}',
+    log_model=True
+)
+
+logdir = f'{TENSORBOARD_LOGGING_PATH}/AE_{MODEL_TYPE}/e_{experiment_name}__{_tmp_name}'
+
+image_save_path = os.path.join(logdir, IMG_SAVE_DIRNAME)
 
 if not os.path.exists(image_save_path):
     os.makedirs(image_save_path)
@@ -152,7 +175,7 @@ if __name__ == "__main__":
             if param.lower() not in hparams[key] and param.upper() not in hparams[key]:
                 hparams[key][param] = config_dict[key][param]
     
-    hparams['TRAINING']['full_training_logs_dir'] = logger.log_dir
+    hparams['TRAINING']['full_training_logs_dir'] = logdir
     
     logger.log_hyperparams(hparams)
     # ---------------- #
@@ -175,7 +198,20 @@ if __name__ == "__main__":
         case 'LSTMPLAIN':
             HIDDEN_SIZE = int(config_dict[model_parameters_key]['HIDDEN_SIZE'])
             autoencoder = LSTM_AE(window_size=win_size, channels=n_features, hidden_size=HIDDEN_SIZE, latent_size=LATENT_DIM, device=device, lr=LR)
-        
+        case 'LSTMVAE':
+            CHANNELS = int(config_dict[model_parameters_key]['CHANNELS'])
+            HIDDEN_SIZE = int(config_dict[model_parameters_key]['HIDDEN_SIZE'])
+            LSTM_LAYERS = int(config_dict[model_parameters_key]['LSTM_LAYERS'])
+            EMBEDDING_FILTERS = int(config_dict[model_parameters_key]['EMBEDDING_FILTERS'])
+            autoencoder = LSTMVAE(
+                input_size=WINDOW_SIZE,
+                channels=CHANNELS,
+                hidden_size=HIDDEN_SIZE,
+                latent_size=LATENT_DIM,
+                num_lstm_layers=LSTM_LAYERS,
+                lr=LR,
+                embedding_filters=EMBEDDING_FILTERS,
+            )
         case _:
             raise ValueError(f'Invalid model type: {MODEL_TYPE}')
     # ---------------- #
@@ -225,7 +261,7 @@ if __name__ == "__main__":
         train_dataloaders=train_loader
         )
 
-    logging.debug(os.path.join(logger.save_dir, logger.name, logger.version, "checkpoints"))
+    logging.debug(os.path.join(logdir, "checkpoints"))
     logging.debug('Training finished.')
     # ---------------- #
     
@@ -242,9 +278,9 @@ if __name__ == "__main__":
     logging.debug('Evaluation...')
     
     test_date_range = test_dataset.get_dates_range()
-    test_date_range = pd.date_range(start=test_date_range['start'], end=test_date_range['end'], freq=f'{TEST_SLIDE}min', tz='Europe/Warsaw')
+    test_date_range = pd.date_range(start=test_date_range['start'], end=test_date_range['end'], freq=f'{TEST_SLIDE}min')
     
-    save_path = os.path.join(logger.save_dir, logger.name, logger.version, "eval")
+    save_path = os.path.join(logdir, "eval")
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     
@@ -266,5 +302,8 @@ if __name__ == "__main__":
                                 )
     
     logging.debug('Evaluation finished.')
+    
+    
+    wandb.finish()
     # ---------------- #
     
