@@ -10,6 +10,7 @@
 
 run_name="standard"
 conf="config.ini"
+models_to_run=(LSTMVAE LSTMCNN)
 
 echo "Activating the virtual environment"
 source /home/users/ignacys/pl0134-01/project_data/pyvenv/bin/activate
@@ -20,21 +21,13 @@ echo "Preparing data"
 python admire/preprocessing/ae_data_prep.py --config_filename $conf --augument
 echo "Finished preparing data"
 
-# First run CNN version
-echo "Running training CNN version"
-python admire/models/ae_train.py --model_type CNN --experiment_name $run_name --config_path $conf
-echo "Finished running training CNN version"
-
-
-# Second run LSTMCNN version
-echo "Running training LSTMCNN version"
-python admire/models/ae_train.py --model_type LSTMCNN --experiment_name $run_name --config_path $conf
-echo "Finished running training LSTMCNN version"
-
-# Third run LSTMPLAIN version
-echo "Running training LSTMPLAIN version"
-python admire/models/ae_train.py --model_type LSTMPLAIN --experiment_name $run_name --config_path $conf
-echo "Finished running training LSTMPLAIN version"
+# Run benchmark
+for model in "${models[@]}"
+do 
+    echo "Running training $model version"
+    python admire/models/ae_train.py --model_type $model --experiment_name $run_name --config_path $conf
+    echo "Finished running training $model version"
+done
 
 # Print when finished
 echo "-----------------------------"

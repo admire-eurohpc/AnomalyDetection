@@ -13,3 +13,5 @@ images/
 data/*csv
 
 wandb_private.key
+wandb/
+artifacts/
