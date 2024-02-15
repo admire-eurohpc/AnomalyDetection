@@ -23,6 +23,7 @@ from ae_decoder import CNN_decoder, CNN_LSTM_decoder
 from ae_litmodel import LitAutoEncoder, LSTM_AE
 from ae_dataloader import TimeSeriesDataset
 from utils.config_reader import read_config
+from utils.metrics_evaluation import MetricsEvaluator
 from ae_eval_model import run_test
 from ae_lstm_vae import LSTMVAE, LSTMEncoder, LSTMDecoder
 
@@ -76,15 +77,23 @@ LR = float(config_dict[model_parameters_key]['LEARNING_RATE'])
 _tmp_name = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
 # logger = TensorBoardLogger(save_dir=TENSORBOARD_LOGGING_PATH, name=f"AE_{MODEL_TYPE}", version=f'e_{experiment_name}__{_tmp_name}')
 
+WANDB_UPSTREAM = 'ignacysteam/lightning_logs'
 with open('wandb_private.key', 'r') as f:
     wandb_key = f.readline()
-    
     try: 
         wandb.login(
             key=wandb_key
         )
     except Exception as e:
         raise ValueError(f'Cannot log in to wandb: {e}')
+    
+run = wandb.init(
+    project='lightning_logs',
+    name=f"AE_{MODEL_TYPE}",
+    id=f'e_{experiment_name}-{_tmp_name}',
+)
+    
+print(f'Wandb config: id: {run.id}, name: {run.name}, entity: {run.entity}')
     
 logger = WandbLogger(
     save_dir=TENSORBOARD_LOGGING_PATH,
@@ -287,21 +296,30 @@ if __name__ == "__main__":
     autoencoder.eval()
     autoencoder.freeze()
     
-    run_test(autoencoder=autoencoder,
-                                test_dataloader=test_dataloader,
-                                test_dataset=test_dataset,
-                                test_date_range=test_date_range,
-                                nodes_count=NODES_COUNT,
-                                use_entropy = True,
-                                save_entropy_to_parquet = True,
-                                save_rec_err_to_parquet=True,
-                                plot_rec_err=True,
-                                test_batch_size=EVALUATION_BATCH_SIZE,
-                                device=device,
-                                save_eval_path=save_path,
-                                )
+    rec_error_df = run_test(autoencoder=autoencoder, 
+                test_dataloader=eval_dataloader,
+                test_dataset=test_dataset,
+                test_date_range=test_date_range,
+                nodes_count=NODES_COUNT,
+                save_rec_err_to_parquet=True,
+                test_batch_size=EVALUATION_BATCH_SIZE,
+                device=device,
+                save_eval_path=save_path,
+                wandb_logger=logger
+                )
     
     logging.debug('Evaluation finished.')
+    
+    
+    
+    metrics_evaluator = MetricsEvaluator(
+        processed_data_dir=PROCESSED_DATA_DIR,
+        wandb_run=run,
+    )
+    
+    metrics_evaluator.pass_reconstruction_data(rec_error_df)
+    
+    metrics_evaluator.run()
     
     
     wandb.finish()
