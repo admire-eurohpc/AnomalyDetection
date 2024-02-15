@@ -85,7 +85,21 @@ def multiprocess_batch(batch: torch.Tensor):
     return entropy
 
 def multiprocess_recon_error(batch: torch.Tensor):
-    batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
+    
+    try:
+        logging.debug(f"Trying to run test set with autoencoder.encoder(batch)")
+        batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
+    except Exception as e:
+        logging.error(f"Error while running test set: {e}")
+
+        try:
+            logging.debug(f"Trying to run test set with autoencoder(batch)")
+            rec, _ = autoencoder(batch)
+            batch_err = torch.abs(batch - rec)
+        except Exception as e:
+            logging.error(f"Error while running test set: {e}")
+            raise e
+    
     err = torch.mean(batch_err, dim=(1,2))
     err_detached = err.cpu().numpy()
     err_detached = err_detached.flatten()
@@ -210,12 +224,12 @@ def run_test(autoencoder: L.LightningModule,
         entropy_list= list(chain.from_iterable(entropy_list))
 
         entropy_stripped = []
-        for i in range(NODES_COUNT):
+        for i in range(nodes_count):
             entropy_stripped.append(entropy_list[(i*full_node_len): (i*full_node_len) + node_len])
             
         logging.debug(f"Test reconstruction error stripped len: {len(entropy_stripped)}")
 
-        test_entropy_np = np.reshape(entropy_stripped, (NODES_COUNT, node_len))
+        test_entropy_np = np.reshape(entropy_stripped, (nodes_count, node_len))
 
         test_recon_mae_np = test_entropy_np*test_recon_mae_np
 
