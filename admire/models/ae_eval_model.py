@@ -105,7 +105,7 @@ def run_test(autoencoder: L.LightningModule,
              device: str = 'cpu',
              save_eval_path: str = 'eval',
              wandb_logger: Logger | WandbLogger | None = None
-             ) -> np.ndarray:
+             ) -> pd.DataFrame:
     logging.debug(f"Running model on test set")
 
     test_recon_mae = []
@@ -246,7 +246,7 @@ def run_test(autoencoder: L.LightningModule,
                             savedir=save_eval_path
                             )        
     
-    return test_recon_mae_np
+    return stats_df
 
 def plot_z_scores(test_recon_mae_np: np.ndarray,
                 test_dataset: TimeSeriesDataset,
