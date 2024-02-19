@@ -179,10 +179,13 @@ if __name__ == "__main__":
     hparams = {}
     to_copy = [model_parameters_key, 'TRAINING', 'PREPROCESSING']
     for key in to_copy:
-        hparams[key] = {}
+        save_key = key.upper()
+        if 'PARAMETERS' in key:
+            save_key = 'MODEL_PARAMETERS'
+        hparams[save_key] = {}
         for param in config_dict[key]:
-            if param.lower() not in hparams[key] and param.upper() not in hparams[key]:
-                hparams[key][param] = config_dict[key][param]
+            if param.lower() not in hparams[save_key] and param.upper() not in hparams[save_key]:
+                hparams[save_key][param] = config_dict[key][param]
     
     hparams['TRAINING']['full_training_logs_dir'] = logdir
     

@@ -68,7 +68,7 @@ class LitAutoEncoder(pl.LightningModule):
         self.log('train_mae', self._get_reconstruction_mae(x, x_hat))
         self.log('train_mape', self._get_reconstruction_mape(x, x_hat))
         
-        self.log_gradients_in_model(self.global_step)
+        # self.log_gradients_in_model(self.global_step)
         
         return loss
     
@@ -82,12 +82,12 @@ class LitAutoEncoder(pl.LightningModule):
         self.log('test_mape', self._get_reconstruction_mape(x, x_hat))
 
 
-    def log_gradients_in_model(self, step):
-        for tag, value in self.named_parameters():
-            if value.grad is not None:
+    # def log_gradients_in_model(self, step):
+    #     for tag, value in self.named_parameters():
+    #         if value.grad is not None:
                 
-                self.tensorboard_logger = self.trainer.logger.experiment
-                self.tensorboard_logger.add_histogram(tag + "/grad", value.grad.cpu(), step)
+    #             self.tensorboard_logger = self.trainer.logger.experiment
+    #             self.tensorboard_logger.add_histogram(tag + "/grad", value.grad.cpu(), step)
          
 
 class LSTMAE_Encoder(nn.Module):
@@ -230,7 +230,7 @@ class LSTM_AE(pl.LightningModule):
         self.log('train_mae', self._get_reconstruction_mae(x, x_hat))
         self.log('train_mape', self._get_reconstruction_mape(x, x_hat))
         
-        self.log_gradients_in_model(self.global_step)
+        # self.log_gradients_in_model(self.global_step)
         
         return loss
     
@@ -244,9 +244,9 @@ class LSTM_AE(pl.LightningModule):
         self.log('test_mape', self._get_reconstruction_mape(x, x_hat))
 
 
-    def log_gradients_in_model(self, step):
-        for tag, value in self.named_parameters():
-            if value.grad is not None:
+    # def log_gradients_in_model(self, step):
+    #     for tag, value in self.named_parameters():
+    #         if value.grad is not None:
                 
-                self.tensorboard_logger = self.trainer.logger.experiment
-                self.tensorboard_logger.add_histogram(tag + "/grad", value.grad.cpu(), step)
+    #             self.tensorboard_logger = self.trainer.logger.experiment
+    #             self.tensorboard_logger.add_histogram(tag + "/grad", value.grad.cpu(), step)

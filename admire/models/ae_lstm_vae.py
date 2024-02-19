@@ -107,20 +107,35 @@ class LSTMVAE(L.LightningModule):
         num_lstm_layers: int = 2, 
         embedding_filters: int = 16,
         lr: float = 2e-4,
+        kld_weight: float = 1.0,
+        beta: float = 10.0,
+        kl_weighting_scheme: str = 'Normal',
         monitor: str = 'train_loss',
         monitor_mode: str = 'min',
         ):
         """
-        input_size: int, batch_size x sequence_length x input_dim
+        input_size: int, input_dim
+        channels: int, number of channels in input
         hidden_size: int, output size of LSTM AE
         latent_size: int, latent z-layer size
         num_lstm_layer: int, number of layers in LSTM
+        embedding_filters: int, number of filters in CNN
         lr: int, learning rate
+        kld_weight: float, weight of KLD loss, default 1.0
+        beta: float, beta value for B-Norm, beta should be > 1.0
+        kl_weighting_scheme: str, KLD weighting scheme, default B-Norm, options: B-Norm, Normal
+        monitor: str, metric to monitor, default train_loss
+        monitor_mode: str, mode of monitoring, default min
         """
         super(LSTMVAE, self).__init__()
-        self.save_hyperparameters()
         
         self.lr = lr
+        self.kld_weight_normal = kld_weight
+        self.kld_weight_B_norm = (beta * latent_size) / input_size #https://openreview.net/pdf?id=Sy2fzU9gl
+        
+        self.kld_weight = self.kld_weight_normal if kl_weighting_scheme == 'Normal' else self.kld_weight_B_norm
+        self.log('kld_weight', self.kld_weight)
+        
         self.monitor = monitor
         self.monitor_mode = monitor_mode
 
@@ -148,6 +163,9 @@ class LSTMVAE(L.LightningModule):
         self.fc21 = nn.Linear(self.hidden_size, self.latent_size)
         self.fc22 = nn.Linear(self.hidden_size, self.latent_size)
         self.fc3 = nn.Linear(self.latent_size, self.hidden_size)
+        
+        
+        self.save_hyperparameters()
 
     def reparametize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -169,18 +187,17 @@ class LSTMVAE(L.LightningModule):
         mu = args[2]
         log_var = args[3]
 
-        kld_weight = 0.00025  # Account for the minibatch samples from the dataset
         recons_loss = F.mse_loss(recons, input)
 
         kld_loss = torch.mean(
             -0.5 * torch.sum(1 + log_var - mu**2 - log_var.exp(), dim=1), dim=0
-        )
+        ) * self.kld_weight
 
-        loss = recons_loss + kld_weight * kld_loss
+        loss = recons_loss + kld_loss
         return {
             "loss": loss,
             "Reconstruction_Loss": recons_loss.detach(),
-            "KLD_Loss": -kld_loss.detach(),
+            "KLD_Loss": kld_loss.detach(),
         }
 
     def forward(self, x):

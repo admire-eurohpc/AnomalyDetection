@@ -178,7 +178,7 @@ def run_test(autoencoder: L.LightningModule,
 
     test_recon_mae_stripped = []
     for i in range(nodes_count):
-        test_recon_mae_stripped.append(test_recon_mae[(i*full_node_len): (i*full_node_len) + node_len])
+        test_recon_mae_stripped.append(test_recon_mae[(i*node_len): (i*node_len) + node_len])
         
     logging.debug(f"Test reconstruction error stripped len: {len(test_recon_mae_stripped)}")
 
