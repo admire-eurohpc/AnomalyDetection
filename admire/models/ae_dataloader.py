@@ -56,9 +56,9 @@ class TimeSeriesDataset(Dataset):
 
         self.dates_range = {}
         _dates = pd.read_parquet(os.path.join(data_dir, filenames[0]), columns=['date'])
-        self.dates_range['start'] = pd.to_datetime(_dates['date'].min())
-        self.dates_range['end'] =  pd.to_datetime(_dates['date'].max())
-
+        self.dates_range['start'] = pd.to_datetime(_dates['date'].min(), utc=True)
+        self.dates_range['end'] =  pd.to_datetime(_dates['date'].max(), utc=True)
+        
         # Concatenate data into one time series array (numpy array)
         # TODO: This is not efficient as for bigger datasets may load too much data into memory
         # but it works for now
@@ -75,7 +75,11 @@ class TimeSeriesDataset(Dataset):
                     .to_numpy().T.reshape(len(columns), 1, -1) 
                     
             #logger.debug(f'Loaded data shape: {_data.shape}')
-                    
+
+
+            if slide_length != 1:
+                cutoff_value = np.shape(_data)[2]%self.slide_length
+                _data = _data[:,:,:-cutoff_value]
             if self.time_series is None:
                 self.time_series = _data
             else:
@@ -105,6 +109,11 @@ class TimeSeriesDataset(Dataset):
         '''
         Returns the number of windows in the time series given the window size and slide length
         '''
+        '''
+        return self.nodes_count*self.get_node_full_len()
+        The expression above is simpler and yields the same value as current solution, however it results in uncommon error
+        https://github.com/autonomousvision/carla_garage/issues/12
+        '''
         return ((self.time_series.shape[1] - self.window_size)// self.slide_length) + 1 # TODO: Check this thoroughly
 
     def __getitem__(self, idx): 
@@ -122,11 +131,19 @@ class TimeSeriesDataset(Dataset):
     def get_node_len(self):
         '''Returns the node length adjusted to dataloader scenario (without final N samples) 
          since we can't reconstruct N min window depending on less than N samples'''
-        return ((self.time_series.shape[1]//self.nodes_count - self.window_size)// self.slide_length) + 1
-    
+        node_len = (self.time_series.shape[1]//self.nodes_count - self.window_size)
+        if node_len % self.slide_length == 0:
+            return ((self.time_series.shape[1]//self.nodes_count - self.window_size)// self.slide_length)
+        else : 
+            return ((self.time_series.shape[1]//self.nodes_count - self.window_size)// self.slide_length)+1
+
     def get_node_full_len(self):
         '''Returns the full node length including last N samples'''
-        return self.time_series.shape[1]//self.nodes_count 
+        full_node_len = (self.time_series.shape[1]//self.nodes_count)
+        if full_node_len % self.slide_length == 0:
+            return ((self.time_series.shape[1]//self.nodes_count)//self.slide_length)
+        else:
+            raise RuntimeError("Inappropriate node length. Time series length modulo self.slide_length should return 0")
     
     def get_input_layer_size_flattened(self):
         return self.time_series.shape[0] * self.time_series.shape[1] * self.window_size
@@ -150,7 +167,12 @@ class TimeSeriesDataset(Dataset):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
 
-    dataset = TimeSeriesDataset(data_dir="data/processed/test", normalize=True)
+    dataset = TimeSeriesDataset(data_dir="data/processed/all_march_top200_withalloc_and_augm_fixed_hours/test", 
+                                normalize=True, 
+                                window_size=60, 
+                                slide_length=1)
+    print(np.shape(dataset.get_time_series()))
+    print(len(dataset))
     d = next(iter(dataset))
     print(d.shape)
     print(d)

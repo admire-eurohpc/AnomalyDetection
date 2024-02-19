@@ -58,17 +58,17 @@ class CNN_encoder(nn.Module):
         
         modules = []
         modules.append(nn.Conv1d(input_channels, channels[0], kernel_size=kernel_size, padding='same')) #input = (N x 4 x 60), output = (N x channel[0] x 60)
-        modules.append(nn.ELU())
+        modules.append(nn.ReLU())
         modules.append(nn.AvgPool1d(3)) # input = (N x channel[0] x 60), output = (N x channel[0] x 20)
         modules.append(nn.Dropout(0.2))
         
         modules.append(nn.Conv1d(channels[0], channels[1], kernel_size=kernel_size, padding='same'))  # input = (N x channel[0] x 20), output = (N x channel[1] x 20)
-        modules.append(nn.ELU())
+        modules.append(nn.ReLU())
         modules.append(nn.AvgPool1d(3)) # input = (N x channel[1] x 20), output = (N x channel[1] x 6)
         modules.append(nn.Dropout(0.2))
         
         modules.append(nn.Conv1d(channels[1], channels[2], kernel_size=kernel_size, padding='same')) # input = (N x channel[1] x 6), output = (N x channel[2] x 6)
-        modules.append(nn.ELU())
+        modules.append(nn.ReLU())
         modules.append(nn.AvgPool1d(3)) # input = (N x channel[2] x 6), output = (N x channel[2] x 2)
         modules.append(nn.Dropout(0.2))
         

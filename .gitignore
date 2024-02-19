@@ -11,3 +11,7 @@
 images/
 *lightning_logs*
 data/*csv
+
+wandb_private.key
+wandb/
+artifacts/

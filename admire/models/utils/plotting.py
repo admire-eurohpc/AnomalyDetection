@@ -89,7 +89,7 @@ def plot_recon_error_each_node(reconstruction_errors: list,
     '''
     fig = make_subplots(rows=1, cols=1)
  
-    for i in tqdm.tqdm(range(n_nodes), desc="Plotting node ReconError"):
+    for i in tqdm.tqdm(range(len(reconstruction_errors)), desc="Plotting node ReconError"):
         fig.append_trace(go.Scatter(x = time_axis, y = reconstruction_errors[i], mode="lines", name=hostnames[i]), row=1, col=1)
 
     fig.write_html(os.path.join(savedir, out_name + '.html'))

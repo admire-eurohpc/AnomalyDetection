@@ -9,11 +9,32 @@ import configparser
 import random
 from itertools import cycle, repeat, compress, chain
 from tqdm import tqdm
+from anomaly import Anomaly
+import yaml
+import multiprocessing as mp
+import argparse
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--config_filename', type=str, default='config.ini', help='Config filename')
+# Add augument flag
+parser.add_argument('--augument', action='store_true', help='Augument data')
+
+if parser.parse_args().config_filename is not None:
+    config_filename = parser.parse_args().config_filename
+if parser.parse_args().augument is not None:
+    AUGUMENT = parser.parse_args().augument
+    
+print(AUGUMENT)
+
 config = configparser.ConfigParser()
-config.read('config.ini')
+config.read(config_filename)
+
+with open('anomalies.yaml') as f:
+    anomalies = yaml.load(f, yaml.UnsafeLoader)
+    anomalies_list = [Anomaly(**a) for a in anomalies['anomalies']]  
 
 def read_data(raw_data_dir: str = 'data/raw', important_cols: List[str] = None) -> pd.DataFrame:
     """
@@ -32,25 +53,18 @@ def read_data(raw_data_dir: str = 'data/raw', important_cols: List[str] = None) 
     
     _, _, filenames = next(os.walk(raw_data_dir))
     
-    for filename in filenames:
+    for filename in tqdm(filenames, desc='Reading data', total=len(filenames)):
         logger.debug(f'Reading {filename}')
         path = os.path.join(raw_data_dir, filename)
         if important_cols:
             _df = pd.read_parquet(path, columns=important_cols)
         else:
             _df = pd.read_parquet(path)
+        logger.debug(f'DF info {_df.info()}')
         
-        _df['date']  = pd.to_datetime(_df['date'])
+        _df['date']  = pd.to_datetime(_df['date'], utc=True)
         
-        if _df['date'].dt.tz is None:
-            _df['date'] = _df['date'].dt.tz_localize('Europe/Warsaw')
-        else:
-            _df['date'] = _df['date'].dt.tz_convert('Europe/Warsaw')
-        
-        _df['date'] = _df['date'].dt.round('min')
-        
-        df = pd.concat([df, _df], ignore_index=True)
-            
+        df = pd.concat([df, _df], ignore_index=True)          
     
     logger.debug(f'DF info {df.info()}')
     return df.reset_index(drop=True)
@@ -98,6 +112,7 @@ def augment_df(original_df: pd.DataFrame, column: str, iterator: Iterator, augme
                     copy_df.loc[indices, 'power'] = vals
 
     return copy_df
+
 def save_data(df: pd.DataFrame, filename: str, data_dir: str = 'data/processed/', keep_columns: List[str] = None) -> None:
     """
     Saves data to parquet file.
@@ -115,7 +130,7 @@ def save_data(df: pd.DataFrame, filename: str, data_dir: str = 'data/processed/'
         os.makedirs(data_dir)
 
     path = os.path.join(data_dir, filename)
-    logger.info(f'Saving data of shape {df.shape} to {path}')
+    logger.debug(f'Saving data of shape {df.shape} to {path}')
 
     # If keep_columns is specified, save only those columns
     if keep_columns:
@@ -138,29 +153,27 @@ def save_data(df: pd.DataFrame, filename: str, data_dir: str = 'data/processed/'
     # with open(metadata_path, 'w') as f:
     #     json.dump(metadata, f)
 
-def remove_data_between_dates(df: pd.DataFrame, start: str, end: str) -> pd.DataFrame:
+def remove_data_between_dates(df: pd.DataFrame, start: datetime, end: datetime) -> pd.DataFrame:
     """
-    Removes data between dates (inclusive, exclusive). Format of dates is 'YYYY-MM-DD'.
-
-    For example if we want to remove data between 2020-01-01 and 2020-01-05, we would call:
-    `remove_data_between_dates(df, '2020-01-02', '2020-01-05')`, and this way there would be 
-    data up to 2020-01-01 23:59:59 and after 2020-01-05 00:00:00
-
+    Removes data between dates (inclusive, inclusive).
     """
-    start = pd.to_datetime(start, format=r'%Y-%m-%d', utc=False).tz_localize('Europe/Warsaw')
-    end = pd.to_datetime(end, format=r'%Y-%m-%d', utc=False).tz_localize('Europe/Warsaw')
+    start = start.date()
+    end = end.date()
 
-    return df.loc[~((df['date'] >= start) & (df['date'] < end))]
+    logger.info(f'Removing data between {start} and {end}')
+    dates = pd.to_datetime(df['date']).dt.date
+
+    return df.loc[~((dates >= start) & (dates <= end))]
 
 def get_data_for_hosts(df: pd.DataFrame, hosts: List[str]) -> pd.DataFrame:
     """Returns/filters datafram for specified hosts only. Hosts should be a list of strings."""
     return df[df['hostname'].isin(hosts)]
 
-def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str, host: str, data_set: str) -> pd.DataFrame:
+def fill_missing_data(origianl_df: pd.DataFrame, date_start: datetime, date_end: datetime, host: str, data_set: str) -> pd.DataFrame:
     """Fill places where there is no measurements for a host between two dates (inclusive)"""
     _df = pd.DataFrame()
-    # Create a dataframe with all dates between start and end in UTC+1 timezone
-    _df['date'] = pd.date_range(start=date_start, end=date_end, freq='1min', tz='Europe/Warsaw')
+    # Create a dataframe with all dates between start and end in Warsaw timezone
+    _df['date'] = pd.date_range(start=date_start, end=date_end, freq='1min', tz=datetime.now().astimezone().tzinfo)
 
     # convert the 'date' column to datetime format
     origianl_df = origianl_df.copy().drop_duplicates(subset="date")
@@ -176,28 +189,31 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
     assert shape_before_merge[0] == _df.shape[0], "length of the artificial dataframe before and after merge should be the same"
 
     #TODO: make a function to perform augmentation, code became to large and redundant in places
-    augment_step = random.randint(60, 90)
-    augment_len = random.randint(15, 45)
+    if AUGUMENT:
+        augment_step = random.randint(60, 90)
+        augment_len = random.randint(15, 45)
 
-    spike_all_features_iter = (([True]*augment_len + [False]*augment_step)*5 + ([False]*(augment_step + augment_len))*2)
-    spike_only_cpu_feature_iter = (([False]*(augment_step + augment_len))*5 + ([True]*augment_step + [False]*augment_len)*2)
+        spike_all_features_iter = (([True]*augment_len + [False]*augment_step)*5 + ([False]*(augment_step + augment_len))*2)
+        spike_only_cpu_feature_iter = (([False]*(augment_step + augment_len))*5 + ([True]*augment_step + [False]*augment_len)*2)
 
     # Fill missing values with **fill_value** which is 0 by default
     match data_set:
         case 'train':
             _df['hostname'] = host
-            _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_all_features_iter, 1)['power'])
-            _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_all_features_iter, 1)['cpu1'])
-            _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_all_features_iter, 1)['cpu2'])
-            _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_only_cpu_feature_iter, 2)['power'])
-            _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_only_cpu_feature_iter, 2)['cpu1'])
-            _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_only_cpu_feature_iter, 2)['cpu2'])
+            if AUGUMENT:
+                _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_all_features_iter, 1)['power'])
+                _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_all_features_iter, 1)['cpu1'])
+                _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_all_features_iter, 1)['cpu2'])
+                _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_only_cpu_feature_iter, 2)['power'])
+                _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_only_cpu_feature_iter, 2)['cpu1'])
+                _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_only_cpu_feature_iter, 2)['cpu2'])
             _df['power'] = _df['power'].fillna(random.randint(138, 144))
             _df['cpu1'] = _df['cpu1'].fillna(random.randint(28, 30))
             _df['cpu2'] = _df['cpu2'].fillna(random.randint(28, 30))
             if include_cpu_alloc:
-                _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_all_features_iter, 1)['cpus_alloc'])
-                _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_only_cpu_feature_iter, 1)['cpus_alloc'])
+                if AUGUMENT:
+                    _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_all_features_iter, 1)['cpus_alloc'])
+                    _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_only_cpu_feature_iter, 1)['cpus_alloc'])
                 _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
 
         case 'test':
@@ -209,13 +225,18 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: str, date_end: str,
 
     return _df
 
-def host_sort(df, hosts):
-    res = {}
+def host_sort(df, hosts: List[str]) -> List[str]:
+    """Sort hosts by number of measurements"""
+    
     logger.debug('Estimating hosts length')
-    for host in tqdm(hosts):
-        res[host] = len(df.index[df['hostname'] == host])
+    
+    hostname_counts = df['hostname'].value_counts()
+    hostname_counts_dict = hostname_counts.to_dict()
+    
+    # take only hosts that we want to process
+    hostname_counts_dict = {k: v for k, v in hostname_counts_dict.items() if k in hosts}
 
-    sorted_res = dict(sorted(res.items(), key=lambda item: item[1], reverse=True))
+    sorted_res = dict(sorted(hostname_counts_dict.items(), key=lambda item: item[1], reverse=True))
     return list(sorted_res.keys())[:nodes_count]
 
 if __name__ == '__main__':
@@ -227,12 +248,23 @@ if __name__ == '__main__':
     nodes_count = int(config['PREPROCESSING']['nodes_count_to_process'])
     include_cpu_alloc = bool(config['PREPROCESSING']['with_cpu_alloc'])
     
+    # Flush save_data_dir
+    if os.path.exists(save_data_dir):
+        logger.info(f'Removing {save_data_dir}')
+        os.system(f'rm -rf {save_data_dir}')
+        os.makedirs(save_data_dir)
+        logger.info(f'Created {save_data_dir}')
+    else:
+        os.makedirs(save_data_dir)
+        logger.info(f'Created {save_data_dir}')
+    
     important_cols = ['date', 'hostname', 'power', 'cpu1', 'cpu2']
     if include_cpu_alloc:
         important_cols.append('cpus_alloc')
 
+    logger.info(f'Loading data from {raw_data_dir}')
     raw_df = read_data(raw_data_dir, important_cols)
-    logger.debug(f'Loaded data shape {raw_df.shape}')
+    logger.info(f'Loaded data shape {raw_df.shape}')
     
     # Remove hostname from columns that we want to save
     important_cols.remove('hostname')
@@ -253,74 +285,114 @@ if __name__ == '__main__':
     test_date_range_start, test_date_range_end = config['PREPROCESSING'][f'test_date_range'].split(',')
     train_date_range_start, train_date_range_end = config['PREPROCESSING'][f'train_date_range'].split(',')
     
+    test_date_range_start = datetime.strptime(test_date_range_start, r'%Y-%m-%d')
+    test_date_range_start = test_date_range_start.replace(tzinfo=datetime.now().astimezone().tzinfo)
+    
+    test_date_range_end = datetime.strptime(test_date_range_end, r'%Y-%m-%d')
+    test_date_range_end = test_date_range_end.replace(tzinfo=datetime.now().astimezone().tzinfo)
+    
+    train_date_range_start = datetime.strptime(train_date_range_start, r'%Y-%m-%d')
+    train_date_range_start = train_date_range_start.replace(tzinfo=datetime.now().astimezone().tzinfo)
+    
+    train_date_range_end = datetime.strptime(train_date_range_end, r'%Y-%m-%d')
+    train_date_range_end = train_date_range_end.replace(tzinfo=datetime.now().astimezone().tzinfo)
+    
+    LOW_DATE_LIMIT = datetime.strptime('1900-01-01', r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
+    HIGH_DATE_LIMIT = datetime.strptime('2100-01-01', r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
+
     # generate test and train data
-    for type in ['test', 'train']:
+    for type in ['train', 'test']:
         
         df = raw_df.copy(deep=True)
+        
+        print(df['date'].min(), df['date'].max())
+        
+        
         # Remove data before start date and after end date
         if type == 'test':
-            df = remove_data_between_dates(df, '2000-01-01', test_date_range_start) 
-            df = remove_data_between_dates(df, test_date_range_end, '2050-01-01') 
+            df = remove_data_between_dates(df, LOW_DATE_LIMIT, test_date_range_start) 
+            df = remove_data_between_dates(df, test_date_range_end, HIGH_DATE_LIMIT) 
         elif type == 'train':
-            df = remove_data_between_dates(df, '2000-01-01', train_date_range_start) 
-            df = remove_data_between_dates(df, train_date_range_end, '2050-01-01')
+            df = remove_data_between_dates(df, LOW_DATE_LIMIT, train_date_range_start) 
+            df = remove_data_between_dates(df, train_date_range_end, HIGH_DATE_LIMIT)
         else:
             raise ValueError(f'Unknown value{type}')
         
         df = df.reset_index(drop=True)
+         
 
-        # Remove blacklisted date ranges
-        blacklisted_ranges = config['PREPROCESSING'][f'{type}_remove_periods'].split('&')
-        if blacklisted_ranges[0] != '':
-            for range in blacklisted_ranges:
-                start, end = range.split(',')
-                df = remove_data_between_dates(df, start, end)     
-                df = df.reset_index(drop=True)    
-                
         # Train data should not contain test data and vice versa
         # Removing test data from train data prevents data leakage 
         if type == 'train':
-            if datetime.strptime(test_date_range_start, r'%Y-%m-%d') >= datetime.strptime(train_date_range_start, r'%Y-%m-%d') and \
-                datetime.strptime(test_date_range_end, r'%Y-%m-%d') <= datetime.strptime(train_date_range_end, r'%Y-%m-%d'):
+            # if datetime.strptime(test_date_range_start, r'%Y-%m-%d') >= datetime.strptime(train_date_range_start, r'%Y-%m-%d') and \
+            #     datetime.strptime(test_date_range_end, r'%Y-%m-%d') <= datetime.strptime(train_date_range_end, r'%Y-%m-%d'):
+            if test_date_range_start >= train_date_range_start and test_date_range_end <= train_date_range_end:
                     
                 df = remove_data_between_dates(df, test_date_range_start, test_date_range_end)
                 df = df.reset_index(drop=True)
-                logger.warn(f"Train data contains test data!!!")
+                logger.warning(f"Train data contains test data!!! -- removing the overlap")
                 logger.debug("Removed test data from train data.")
+            
+            # Remove blacklisted date ranges ie periods where we know that anomalies occured
+            blacklisted_ranges = config['PREPROCESSING'][f'{type}_remove_periods'].split('&')
+            if blacklisted_ranges[0] != '':
+                for __range in blacklisted_ranges:
+                    start, end = __range.split(',')
+                    start = datetime.strptime(start, r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
+                    end = datetime.strptime(end, r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
+                    df = remove_data_between_dates(df, start, end)     
+                    df = df.reset_index(drop=True)
+                    
+            # Do the same, but use anomalies from anomalies.yaml
+            for anomaly in anomalies_list:
+                df = remove_data_between_dates(df, anomaly.date_start, anomaly.date_end)
+                df = df.reset_index(drop=True)
         
         logger.debug(f'After removing data {df.shape}')
 
         hosts = host_sort(df, hosts_to_take)
-        logging.info(f'Hosts to process {hosts}')
+        logger.info(f'Hosts to process {hosts}')
 
         # Get/filter data for hosts only
         df = get_data_for_hosts(df, hosts)
 
         logger.info(f'After getting data for hosts {type} set {df.shape}')
         logger.info(f'Considered date range {df["date"].min()} - {df["date"].max()} for {type} set')
-
         
-        for host in tqdm(hosts, desc='Filling missing data'):
-            logger.debug(f'Filling missing data for {host}')
-            # Fill missing data for each host
-            if type == 'test':
-                _df_host = fill_missing_data(df[df['hostname'] == host], test_date_range_start, test_date_range_end, host, type)
-            if type == 'train':
-                _df_host = fill_missing_data(df[df['hostname'] == host], train_date_range_start, train_date_range_end, host, type)
+        # This function is just a wrapper in order to enable multiprocessing
+        def __fill_missing_data_for_chunk_of_hosts(process_i: int, chunk: List[str], type: str, pbar: tqdm | None = None):
+            for k, host in enumerate(chunk):
+                logger.debug(f'Filling missing data for {host}')
+                # Fill missing data for each host
+                if type == 'test':
+                    _df_host = fill_missing_data(df[df['hostname'] == host], test_date_range_start, test_date_range_end, host, type)
+                if type == 'train':
+                    _df_host = fill_missing_data(df[df['hostname'] == host], train_date_range_start, train_date_range_end, host, type)
+                
+                # Save each host data to a separate file named after the host
+                save_data(_df_host, f'{host}', os.path.join(save_data_dir, type), keep_columns=important_cols)
+                
+                if (k + 1) % 5 == 0:
+                    logger.info(f'Process {process_i} processed {k + 1} out of {len(chunk)} hosts')
+                    if pbar:
+                        pbar.update(5)
+                if k == len(chunk) - 1:
+                    logger.info(f'Process {process_i} processed {k + 1} out of {len(chunk)} hosts')
+                    logger.info(f'Process {process_i} finished!')
+        
+        # Multiprocessing 
+        processes = []
+        cpus_available = max(1, mp.cpu_count() - 1)
+        logger.info(f'Using {cpus_available} processes')
+        host_chunks = np.array_split(hosts, cpus_available)
+        
+        # with tqdm(total=len(hosts), desc='Filling missing data') as pbar:
+        for i in range(cpus_available):
+            p = mp.Process(target=__fill_missing_data_for_chunk_of_hosts, args=(i, host_chunks[i].tolist(), type))
+            p.start()
+            processes.append(p)
             
-            # Save each host data to a separate file named after the host
-            save_data(_df_host, f'{host}', os.path.join(save_data_dir, type), keep_columns=important_cols)
+        for p in processes:
+            p.join()
             
-    #TODO!: IMPORTANT - make sure that we take the same hosts for train and test
-    # Remove hosts that are in train but not in test and vice versa because we need consistency
-    _, _, train_host_names = next(os.walk(os.path.join(save_data_dir, 'train')))
-    _, _, test_host_names = next(os.walk(os.path.join(save_data_dir, 'test')))
-    
-    if set(train_host_names) != set(test_host_names):
-        for diff in set(train_host_names) - set(test_host_names):
-            logger.error(f'{diff} is in train but not in test. Removing it')
-            #os.remove(os.path.join(save_data_dir, 'train', diff))
-        for diff in set(test_host_names) - set(train_host_names):
-            logger.error(f'{diff} is in test but not in train. Removing it')
-            #os.remove(os.path.join(save_data_dir, 'test', diff))
-            
+        logger.info(f'Finished filling missing data for {type} set')
