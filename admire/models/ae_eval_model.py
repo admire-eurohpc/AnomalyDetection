@@ -240,6 +240,9 @@ def run_test(autoencoder: L.LightningModule,
             try:
                 stats_df = pd.DataFrame(test_entropy_np, index=hostnames, columns=test_date_range[0:len(test_entropy_np[0])].astype(str))
                 stats_df.to_parquet(os.path.join(save_eval_path, 'entropy.parquet'))
+                
+                
+                wandb_logger.log_table('entropy', columns = stats_df.columns.to_list(), data = stats_df.to_numpy())
             except Exception as e:
                 logging.error('Error while saving entropy to parquet: ', e)
 
