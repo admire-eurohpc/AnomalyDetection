@@ -26,6 +26,7 @@ from pytorch_lightning.loggers import WandbLogger, Logger
 from ae_encoder import CNN_encoder, CNN_LSTM_encoder
 from ae_decoder import CNN_decoder, CNN_LSTM_decoder
 from ae_litmodel import LitAutoEncoder, LSTM_AE
+from ae_lstm_vae import LSTMVAE
 from ae_dataloader import TimeSeriesDataset
 from utils.plotting import *
 from utils.config_reader import read_config
@@ -85,20 +86,21 @@ def multiprocess_batch(batch: torch.Tensor):
     return entropy
 
 def multiprocess_recon_error(batch: torch.Tensor):
-    
-    try:
-        logging.debug(f"Trying to run test set with autoencoder.encoder(batch)")
-        batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
-    except Exception as e:
-        logging.error(f"Error while running test set: {e}")
 
+    if isinstance(autoencoder, LSTMVAE):
         try:
-            logging.debug(f"Trying to run test set with autoencoder(batch)")
             rec, _ = autoencoder(batch)
             batch_err = torch.abs(batch - rec)
         except Exception as e:
             logging.error(f"Error while running test set: {e}")
             raise e
+    elif isinstance(autoencoder, LitAutoEncoder):
+        try:
+            batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
+        except Exception as e:
+            logging.error(f"Error while running test set: {e}")
+
+        
     
     err = torch.mean(batch_err, dim=(1,2))
     err_detached = err.cpu().numpy()
@@ -144,19 +146,18 @@ def run_test(autoencoder: L.LightningModule,
         for idx, batch in tqdm.tqdm(enumerate(test_dataloader), desc="Running test reconstruction error", total=ceil(len(test_dataset) / test_batch_size)):
             batch = batch.to(device)
             
-            try:
-                logging.debug(f"Trying to run test set with autoencoder.encoder(batch)")
-                batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
-            except Exception as e:
-                logging.error(f"Error while running test set: {e}")
-            
+            if isinstance(autoencoder, LSTMVAE):
                 try:
-                    logging.debug(f"Trying to run test set with autoencoder(batch)")
                     rec, _ = autoencoder(batch)
                     batch_err = torch.abs(batch - rec)
                 except Exception as e:
                     logging.error(f"Error while running test set: {e}")
                     raise e
+            elif isinstance(autoencoder, LitAutoEncoder):
+                try:
+                    batch_err = torch.abs(batch - autoencoder.decoder(autoencoder.encoder(batch)))
+                except Exception as e:
+                    logging.error(f"Error while running test set: {e}")
             
             err = torch.mean(batch_err, dim=(1,2))
             
