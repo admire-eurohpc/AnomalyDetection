@@ -1,5 +1,5 @@
 from typing import Any, Optional
-from lightning.pytorch.utilities.types import STEP_OUTPUT, OptimizerLRScheduler
+from lightning.pytorch.utilities.types import STEP_OUTPUT, LRSchedulerPLType
 import torch
 from torch import nn 
 from torch.nn import functional as F 
@@ -258,7 +258,7 @@ class LSTMVAE(L.LightningModule):
         for key, value in losses.items():
             self.log(f'{_type}_{key}', value)
               
-    def configure_optimizers(self) -> OptimizerLRScheduler:
+    def configure_optimizers(self) -> LRSchedulerPLType:
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, 
