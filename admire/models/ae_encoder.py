@@ -5,7 +5,7 @@ class Encoder(nn.Module):
     def __init__(self, num_input_channels: int, base_channel_size: int, latent_dim: int, act_fn: object = nn.GELU):
         """
         Args:
-           num_input_channels : Number of input channels of the image. For CIFAR, this parameter is 3
+           num_input_channels : Number of channels going into 1st convolutional layer (always includes cpu_alloc)
            base_channel_size : Number of channels we use in the first convolutional layers. Deeper layers might use a duplicate of it.
            latent_dim : Dimensionality of latent representation z
            act_fn : Activation function used throughout the encoder network
@@ -39,22 +39,17 @@ class CNN_encoder(nn.Module):
     def __init__(self, 
                 kernel_size: int = 3, 
                 latent_dim: int = 32, 
-                cpu_alloc: bool = False,
-                window_size: int = 60,
-                batch_size: int = 1,
+                input_channels: int = 4,
                 channels: list = [16, 32, 64],
                 ):
         """
         Args:
-           num_input_channels : Number of input channels 3 without cpus_alloc, 4 with this feature
-           base_channel_size : Number of channels we use in the first convolutional layers. Deeper layers might use a duplicate of it.
            latent_dim : Dimensionality of latent representation z
-           act_fn : Activation function used throughout the encoder network
+           input_channels : Number of channels going into 1st convolutional layer (always includes cpu_alloc)
+           channels : Number of channels we use in the convolutional layers.
         """
         super().__init__()
-        
-        if cpu_alloc: input_channels = 4
-        else: input_channels = 3
+
         
         modules = []
         modules.append(nn.Conv1d(input_channels, channels[0], kernel_size=kernel_size, padding='same')) #input = (N x 4 x 60), output = (N x channel[0] x 60)
@@ -83,17 +78,21 @@ class CNN_encoder(nn.Module):
         return self.model(x)
 
 class CNN_LSTM_encoder(nn.Module):
-    def __init__(self, kernel_size: int=10, 
+    def __init__(self, kernel_size: int=10,
+                 input_channels: int=4, 
                  lstm_input_dim: int=40, 
                  lstm_out_dim: int=10,
-                 h_lstm_chan: list=[32, 64], 
-                 cpu_alloc: bool=True,) -> None:
+                 h_lstm_chan: list=[32, 64],) -> None:
         super().__init__()
 
-        if cpu_alloc: input_channels = 4
-        else: input_channels = 3
-
-        
+        """
+        Args:
+           kernel_size : Kernel size, note that it is applied in Conv1d convolution
+           input_channels : Number of channels going into 1st convolutional layer (always includes cpu_alloc)
+           lstm_input_dim : Vector length which goes into LSTM block
+           lstm_out_dim : Final dimension of the encoder
+           h_lstm_chan : middle channels of lstm block
+        """
         #CNN encoder
         cnn_modules = []
         channels = [8, 16]

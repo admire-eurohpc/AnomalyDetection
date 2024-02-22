@@ -43,7 +43,6 @@ class TimeSeriesDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.normalize = normalize
-        self.include_cpu_alloc = config.getboolean('PREPROCESSING','with_cpu_alloc')
         self.nodes_count = config.getint('PREPROCESSING', 'nodes_count_to_process')
         
         # Get all filenames in data_dir
@@ -65,9 +64,7 @@ class TimeSeriesDataset(Dataset):
         # Desired shape will be (n_features x n_nodes x n_time_steps )
         # e.g. (3 features x 100 nodes x 1000 time ticks )
         for filename in tqdm.tqdm(filenames, desc="Loading ts data"):
-            columns = ['power', 'cpu1', 'cpu2']
-            if self.include_cpu_alloc:
-                columns.append('cpus_alloc')
+            columns = ['power', 'cpu1', 'cpu2', 'cpus_alloc']
             _data = pd.read_parquet(
                         os.path.join(data_dir, filename), 
                         columns=columns

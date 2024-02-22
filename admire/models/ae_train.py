@@ -44,7 +44,6 @@ config_dict = read_config(config_path)
 
 # PREPROCESSING
 NODES_COUNT = int(config_dict['PREPROCESSING']['nodes_count_to_process'])
-INCLUDE_CPU_ALLOC = config_dict['PREPROCESSING']['with_cpu_alloc'].lower() == 'true'
 PROCESSED_DATA_DIR = config_dict['PREPROCESSING']['processed_data_dir']
 
 # TRAINING
@@ -196,16 +195,16 @@ if __name__ == "__main__":
     match MODEL_TYPE:
         case 'CNN':
             # Init the lightning autoencoder
-            cnn_encoder = CNN_encoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=ENCODER_LAYERS)
-            cnn_decoder = CNN_decoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=DECODER_LAYERS)
+            cnn_encoder = CNN_encoder(kernel_size=3, latent_dim=LATENT_DIM, channels=ENCODER_LAYERS)
+            cnn_decoder = CNN_decoder(kernel_size=3, latent_dim=LATENT_DIM, channels=DECODER_LAYERS)
             autoencoder = LitAutoEncoder(cnn_encoder, cnn_decoder, lr=LR)
         case 'LSTMCNN':
             SEQUENCE_LENGTH = int(config_dict[model_parameters_key]['SEQUENCE_LENGTH'])
             LSTM_OUT_DIM = int(config_dict[model_parameters_key]['LSTM_OUT_DIM'])
             LSTM_IN_DIM = int(config_dict[model_parameters_key]['LSTM_IN_DIM'])
             LSTM_HIDDEN_CHANNELS = list(ast.literal_eval(config_dict[model_parameters_key]['LSTM_HIDDEN_CHANNELS']))
-            cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=LSTM_OUT_DIM, h_lstm_chan=LSTM_HIDDEN_CHANNELS, cpu_alloc=INCLUDE_CPU_ALLOC)
-            cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=LSTM_IN_DIM, lstm_out_dim=1, h_lstm_chan=LSTM_HIDDEN_CHANNELS, cpu_alloc=INCLUDE_CPU_ALLOC, seq_len=SEQUENCE_LENGTH)
+            cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=LSTM_OUT_DIM, h_lstm_chan=LSTM_HIDDEN_CHANNELS)
+            cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=LSTM_IN_DIM, lstm_out_dim=1, h_lstm_chan=LSTM_HIDDEN_CHANNELS, seq_len=SEQUENCE_LENGTH)
             autoencoder = LitAutoEncoder(cnn_lstm_encoder, cnn_lstm_decoder, lr=LR)
         case 'LSTMPLAIN':
             HIDDEN_SIZE = int(config_dict[model_parameters_key]['HIDDEN_SIZE'])
