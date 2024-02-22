@@ -304,7 +304,7 @@ if __name__ == "__main__":
                 test_dataset=test_dataset,
                 test_date_range=test_date_range,
                 nodes_count=NODES_COUNT,
-                save_rec_err_to_parquet=True,
+                save_rec_err_to_parquet=False,
                 test_batch_size=EVALUATION_BATCH_SIZE,
                 device=device,
                 save_eval_path=save_path,

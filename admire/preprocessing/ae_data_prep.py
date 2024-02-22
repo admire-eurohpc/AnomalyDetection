@@ -259,7 +259,7 @@ if __name__ == '__main__':
         logger.info(f'Created {save_data_dir}')
     
     important_cols = ['date', 'hostname', 'power', 'cpu1', 'cpu2']
-    if include_cpu_alloc:
+    if include_cpu_alloc: #TODO get rid of include_cpu_alloc and make cpu_alloc default feature
         important_cols.append('cpus_alloc')
 
     logger.info(f'Loading data from {raw_data_dir}')
@@ -273,12 +273,7 @@ if __name__ == '__main__':
     hosts_to_take = raw_df['hostname'].unique().tolist()
     hosts_to_take = list(filter(lambda x: x not in hosts_blacklist, hosts_to_take))
     
-    # Sort hosts by name and take only first nodes_count
-    # This is done to make sure that we always take the same hosts
-    # in test and train data, but it is possible that some hosts
-    # will be missing in test data if they are not in the first nodes_count
-    # Therefore at the end of the script there is a sparate check to make sure
-    # that all hosts from train data are also in test data (and vice versa)
+    # Sort hosts by name to ensure good order in dest folder
     hosts_to_take.sort()
     
     # Load config for train/test data
@@ -350,6 +345,7 @@ if __name__ == '__main__':
         
         logger.debug(f'After removing data {df.shape}')
 
+        # ensures that for for both train and test we take best n nodes
         hosts = host_sort(df, hosts_to_take)
         logger.info(f'Hosts to process {hosts}')
 
