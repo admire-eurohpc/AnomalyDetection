@@ -204,24 +204,21 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: datetime, date_end:
                 _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_all_features_iter, 1)['power'])
                 _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_all_features_iter, 1)['cpu1'])
                 _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_all_features_iter, 1)['cpu2'])
+                _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_all_features_iter, 1)['cpus_alloc'])
                 _df['power'] = _df['power'].fillna(augment_df(_df, 'power', spike_only_cpu_feature_iter, 2)['power'])
                 _df['cpu1'] = _df['cpu1'].fillna(augment_df(_df, 'cpu1', spike_only_cpu_feature_iter, 2)['cpu1'])
                 _df['cpu2'] = _df['cpu2'].fillna(augment_df(_df, 'cpu2', spike_only_cpu_feature_iter, 2)['cpu2'])
+                _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_only_cpu_feature_iter, 1)['cpus_alloc'])
             _df['power'] = _df['power'].fillna(random.randint(138, 144))
             _df['cpu1'] = _df['cpu1'].fillna(random.randint(28, 30))
             _df['cpu2'] = _df['cpu2'].fillna(random.randint(28, 30))
-            if include_cpu_alloc:
-                if AUGUMENT:
-                    _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_all_features_iter, 1)['cpus_alloc'])
-                    _df['cpus_alloc'] = _df['cpus_alloc'].fillna(augment_df(_df, 'cpus_alloc',spike_only_cpu_feature_iter, 1)['cpus_alloc'])
-                _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
+            _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
 
         case 'test':
             _df['power'] = _df['power'].fillna(random.randint(138, 144))
             _df['cpu1'] = _df['cpu1'].fillna(random.randint(28, 30))
             _df['cpu2'] = _df['cpu2'].fillna(random.randint(28, 30))
-            if include_cpu_alloc:
-                _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
+            _df['cpus_alloc'] = _df['cpus_alloc'].fillna(0)
 
     return _df
 
@@ -246,7 +243,6 @@ if __name__ == '__main__':
     save_data_dir = config['PREPROCESSING']['processed_data_dir']
     hosts_blacklist = config['PREPROCESSING']['hosts_blacklist'].split(',')
     nodes_count = int(config['PREPROCESSING']['nodes_count_to_process'])
-    include_cpu_alloc = bool(config['PREPROCESSING']['with_cpu_alloc'])
     
     # Flush save_data_dir
     if os.path.exists(save_data_dir):
@@ -258,9 +254,7 @@ if __name__ == '__main__':
         os.makedirs(save_data_dir)
         logger.info(f'Created {save_data_dir}')
     
-    important_cols = ['date', 'hostname', 'power', 'cpu1', 'cpu2']
-    if include_cpu_alloc: #TODO get rid of include_cpu_alloc and make cpu_alloc default feature
-        important_cols.append('cpus_alloc')
+    important_cols = ['date', 'hostname', 'power', 'cpu1', 'cpu2', 'cpus_alloc']
 
     logger.info(f'Loading data from {raw_data_dir}')
     raw_df = read_data(raw_data_dir, important_cols)

@@ -55,16 +55,16 @@ def setup_model(input_shape: tuple) -> tuple[LitAutoEncoder]:
     match MODEL_TYPE:
         case 'AE_CNN':
             # Init the lightning autoencoder
-            cnn_encoder = CNN_encoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=ENCODER_LAYERS)
-            cnn_decoder = CNN_decoder(kernel_size=3, latent_dim=LATENT_DIM, cpu_alloc=INCLUDE_CPU_ALLOC, channels=DECODER_LAYERS)
+            cnn_encoder = CNN_encoder(kernel_size=3, latent_dim=LATENT_DIM, channels=ENCODER_LAYERS)
+            cnn_decoder = CNN_decoder(kernel_size=3, latent_dim=LATENT_DIM, channels=DECODER_LAYERS)
             autoencoder = LitAutoEncoder(cnn_encoder, cnn_decoder, lr=LR)
         case 'AE_LSTMCNN':
             SEQUENCE_LENGTH = int(model_parameters['sequence_length'])
             LSTM_OUT_DIM = int(model_parameters['lstm_out_dim'])
             LSTM_IN_DIM = int(model_parameters['lstm_in_dim'])
             LSTM_HIDDEN_CHANNELS = list(ast.literal_eval(model_parameters['lstm_hidden_channels']))
-            cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=LSTM_OUT_DIM, h_lstm_chan=LSTM_HIDDEN_CHANNELS, cpu_alloc=INCLUDE_CPU_ALLOC)
-            cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=LSTM_IN_DIM, lstm_out_dim=1, h_lstm_chan=LSTM_HIDDEN_CHANNELS, cpu_alloc=INCLUDE_CPU_ALLOC, seq_len=SEQUENCE_LENGTH)
+            cnn_lstm_encoder = CNN_LSTM_encoder(lstm_input_dim=1, lstm_out_dim=LSTM_OUT_DIM, h_lstm_chan=LSTM_HIDDEN_CHANNELS)
+            cnn_lstm_decoder = CNN_LSTM_decoder(lstm_input_dim=LSTM_IN_DIM, lstm_out_dim=1, h_lstm_chan=LSTM_HIDDEN_CHANNELS, seq_len=SEQUENCE_LENGTH)
             autoencoder = LitAutoEncoder(cnn_lstm_encoder, cnn_lstm_decoder, lr=LR)
         case 'AE_LSTMPLAIN':
             HIDDEN_SIZE = int(model_parameters['hidden_size'])
@@ -380,7 +380,6 @@ if __name__ == "__main__":
     DECODER_LAYERS = ast.literal_eval(model_parameters['decoder_layers'])
 
     NODES_COUNT = int(params['PREPROCESSING']['nodes_count_to_process'])
-    INCLUDE_CPU_ALLOC = params['PREPROCESSING']['with_cpu_alloc'].lower() == 'true'
     PROCESSED_PATH = params['PREPROCESSING']['processed_data_dir']
     TEST_DATES_RANGE = params['PREPROCESSING']['test_date_range']
 

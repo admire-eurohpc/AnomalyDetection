@@ -41,22 +41,18 @@ class Decoder(nn.Module):
 class CNN_decoder(nn.Module):
     def __init__(self, 
                 latent_dim: int, 
-                cpu_alloc: bool,
+                input_channels: int = 4,
                 channels: list = [32, 16, 8],
                 kernel_size: int = 3, 
                 ):
         """
         Args:
-           num_input_channels : Number of input channels 3 without cpus_alloc, 4 with this feature
-           base_channel_size : Number of channels we use in the first convolutional layers. Deeper layers might use a duplicate of it.
            latent_dim : Dimensionality of latent representation z
-           act_fn : Activation function used throughout the encoder network
+           input_channels : Final number of channels going out from last convolutional layer (always includes cpu_alloc)
+           channels : Number of channels we use in the convolutional layers.
         """
         super().__init__()
         modules = []
-
-        if cpu_alloc: input_channels = 4
-        else: input_channels = 3
         
         # input = (N, latent_dim), output = (N, latent_dim * channels[0])
         modules.append(nn.Linear(latent_dim, latent_dim * channels[0])) 
@@ -96,17 +92,20 @@ class CNN_decoder(nn.Module):
 class CNN_LSTM_decoder(nn.Module):
     def __init__(self, lstm_input_dim: int, 
                  lstm_out_dim: int, 
-                 h_lstm_chan: list[int], 
-                 cpu_alloc: bool, 
-                 seq_len: int
-                 ) -> None:
+                 h_lstm_chan: list[int],
+                 seq_len: int,
+                 input_channels: int=4,) -> None:
         super().__init__()
-        '''
-        input_dim - encoding dim coming from encoder
-        out_dim - input dim coming to the lstm_encoder (it's not a sequence length, it's number of features) (switcheroo)
-        h_dims - lstm channels
-        h_activ - activ function
-        '''
+
+        """
+        Args:
+           kernel_size : Kernel size, note that it is applied in Conv1d convolution
+           input_channels : Number of channels going into 1st convolutional layer (always includes cpu_alloc)
+           lstm_input_dim : Vector length which goes into LSTM block. 
+           lstm_out_dim : Final dimension of latent vector before going into CNN block
+           h_lstm_chan : middle channels of lstm block
+        """
+
         #LSTM decoder
         layer_dims = [lstm_input_dim] + h_lstm_chan + [h_lstm_chan[-1]]
         self.num_layers = len(layer_dims) - 1
@@ -131,9 +130,6 @@ class CNN_LSTM_decoder(nn.Module):
         #CNN decoder
         cnn_modules = []
         channels = [16, 8]
-
-        if cpu_alloc: input_channels = 4
-        else: input_channels = 3
 
         cnn_modules.append(nn.Linear(40, 80)) #latent_dim 4
         cnn_modules.append(nn.Unflatten(1, (channels[0], 5))) #80 into 16x5
