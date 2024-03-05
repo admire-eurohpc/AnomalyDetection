@@ -155,7 +155,7 @@ def save_data(df: pd.DataFrame, filename: str, data_dir: str = 'data/processed/'
 
 def remove_data_between_dates(df: pd.DataFrame, start: datetime, end: datetime) -> pd.DataFrame:
     """
-    Removes data between dates (inclusive, inclusive).
+    Removes data between dates (inclusive, exclusive).
     """
     start = start.date()
     end = end.date()
@@ -163,7 +163,7 @@ def remove_data_between_dates(df: pd.DataFrame, start: datetime, end: datetime) 
     logger.info(f'Removing data between {start} and {end}')
     dates = pd.to_datetime(df['date']).dt.date
 
-    return df.loc[~((dates >= start) & (dates <= end))]
+    return df.loc[~((dates >= start) & (dates < end))]
 
 def get_data_for_hosts(df: pd.DataFrame, hosts: List[str]) -> pd.DataFrame:
     """Returns/filters datafram for specified hosts only. Hosts should be a list of strings."""
@@ -290,7 +290,7 @@ if __name__ == '__main__':
     HIGH_DATE_LIMIT = datetime.strptime('2100-01-01', r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
 
     # generate test and train data
-    for type in ['train', 'test']:
+    for type in ['test', 'train']:
         
         df = raw_df.copy(deep=True)
         
@@ -322,15 +322,6 @@ if __name__ == '__main__':
                 logger.warning(f"Train data contains test data!!! -- removing the overlap")
                 logger.debug("Removed test data from train data.")
             
-            # Remove blacklisted date ranges ie periods where we know that anomalies occured
-            blacklisted_ranges = config['PREPROCESSING'][f'{type}_remove_periods'].split('&')
-            if blacklisted_ranges[0] != '':
-                for __range in blacklisted_ranges:
-                    start, end = __range.split(',')
-                    start = datetime.strptime(start, r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
-                    end = datetime.strptime(end, r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
-                    df = remove_data_between_dates(df, start, end)     
-                    df = df.reset_index(drop=True)
                     
             # Do the same, but use anomalies from anomalies.yaml
             for anomaly in anomalies_list:
