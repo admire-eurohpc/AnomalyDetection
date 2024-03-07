@@ -173,10 +173,12 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: datetime, date_end:
     """Fill places where there is no measurements for a host between two dates (inclusive)"""
     _df = pd.DataFrame()
     # Create a dataframe with all dates between start and end in Warsaw timezone
-    _df['date'] = pd.date_range(start=date_start, end=date_end, freq='1min', tz=datetime.now().astimezone().tzinfo)
+    _df['date'] = pd.date_range(start=date_start, end=date_end, freq='1min', tz='utc')
 
     # convert the 'date' column to datetime format
-    origianl_df = origianl_df.copy().drop_duplicates(subset="date")
+    origianl_df = origianl_df.copy()
+    origianl_df['date'] = origianl_df['date'].dt.floor('Min')
+    origianl_df = origianl_df.drop_duplicates(subset="date")
     shape_before_merge = _df.shape
 
     # Merge the two dataframes, so that we have fixed data range for each host
@@ -275,22 +277,18 @@ if __name__ == '__main__':
     train_date_range_start, train_date_range_end = config['PREPROCESSING'][f'train_date_range'].split(',')
     
     test_date_range_start = datetime.strptime(test_date_range_start, r'%Y-%m-%d')
-    test_date_range_start = test_date_range_start.replace(tzinfo=datetime.now().astimezone().tzinfo)
     
     test_date_range_end = datetime.strptime(test_date_range_end, r'%Y-%m-%d')
-    test_date_range_end = test_date_range_end.replace(tzinfo=datetime.now().astimezone().tzinfo)
     
     train_date_range_start = datetime.strptime(train_date_range_start, r'%Y-%m-%d')
-    train_date_range_start = train_date_range_start.replace(tzinfo=datetime.now().astimezone().tzinfo)
     
     train_date_range_end = datetime.strptime(train_date_range_end, r'%Y-%m-%d')
-    train_date_range_end = train_date_range_end.replace(tzinfo=datetime.now().astimezone().tzinfo)
     
-    LOW_DATE_LIMIT = datetime.strptime('1900-01-01', r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
-    HIGH_DATE_LIMIT = datetime.strptime('2100-01-01', r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
+    LOW_DATE_LIMIT = datetime.strptime('1900-01-01', r'%Y-%m-%d')
+    HIGH_DATE_LIMIT = datetime.strptime('2100-01-01', r'%Y-%m-%d')
 
     # generate test and train data
-    for type in ['test', 'train']:
+    for type in ['train', 'test']:
         
         df = raw_df.copy(deep=True)
         
