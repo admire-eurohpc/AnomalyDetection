@@ -155,7 +155,7 @@ def save_data(df: pd.DataFrame, filename: str, data_dir: str = 'data/processed/'
 
 def remove_data_between_dates(df: pd.DataFrame, start: datetime, end: datetime) -> pd.DataFrame:
     """
-    Removes data between dates (inclusive, inclusive).
+    Removes data between dates (inclusive, exclusive).
     """
     start = start.date()
     end = end.date()
@@ -163,7 +163,7 @@ def remove_data_between_dates(df: pd.DataFrame, start: datetime, end: datetime) 
     logger.info(f'Removing data between {start} and {end}')
     dates = pd.to_datetime(df['date']).dt.date
 
-    return df.loc[~((dates >= start) & (dates <= end))]
+    return df.loc[~((dates >= start) & (dates < end))]
 
 def get_data_for_hosts(df: pd.DataFrame, hosts: List[str]) -> pd.DataFrame:
     """Returns/filters datafram for specified hosts only. Hosts should be a list of strings."""
@@ -173,10 +173,12 @@ def fill_missing_data(origianl_df: pd.DataFrame, date_start: datetime, date_end:
     """Fill places where there is no measurements for a host between two dates (inclusive)"""
     _df = pd.DataFrame()
     # Create a dataframe with all dates between start and end in Warsaw timezone
-    _df['date'] = pd.date_range(start=date_start, end=date_end, freq='1min', tz=datetime.now().astimezone().tzinfo)
+    _df['date'] = pd.date_range(start=date_start, end=date_end, freq='1min', tz='utc')
 
     # convert the 'date' column to datetime format
-    origianl_df = origianl_df.copy().drop_duplicates(subset="date")
+    origianl_df = origianl_df.copy()
+    origianl_df['date'] = origianl_df['date'].dt.floor('Min')
+    origianl_df = origianl_df.drop_duplicates(subset="date")
     shape_before_merge = _df.shape
 
     # Merge the two dataframes, so that we have fixed data range for each host
@@ -275,19 +277,15 @@ if __name__ == '__main__':
     train_date_range_start, train_date_range_end = config['PREPROCESSING'][f'train_date_range'].split(',')
     
     test_date_range_start = datetime.strptime(test_date_range_start, r'%Y-%m-%d')
-    test_date_range_start = test_date_range_start.replace(tzinfo=datetime.now().astimezone().tzinfo)
     
     test_date_range_end = datetime.strptime(test_date_range_end, r'%Y-%m-%d')
-    test_date_range_end = test_date_range_end.replace(tzinfo=datetime.now().astimezone().tzinfo)
     
     train_date_range_start = datetime.strptime(train_date_range_start, r'%Y-%m-%d')
-    train_date_range_start = train_date_range_start.replace(tzinfo=datetime.now().astimezone().tzinfo)
     
     train_date_range_end = datetime.strptime(train_date_range_end, r'%Y-%m-%d')
-    train_date_range_end = train_date_range_end.replace(tzinfo=datetime.now().astimezone().tzinfo)
     
-    LOW_DATE_LIMIT = datetime.strptime('1900-01-01', r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
-    HIGH_DATE_LIMIT = datetime.strptime('2100-01-01', r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
+    LOW_DATE_LIMIT = datetime.strptime('1900-01-01', r'%Y-%m-%d')
+    HIGH_DATE_LIMIT = datetime.strptime('2100-01-01', r'%Y-%m-%d')
 
     # generate test and train data
     for type in ['train', 'test']:
@@ -322,15 +320,6 @@ if __name__ == '__main__':
                 logger.warning(f"Train data contains test data!!! -- removing the overlap")
                 logger.debug("Removed test data from train data.")
             
-            # Remove blacklisted date ranges ie periods where we know that anomalies occured
-            blacklisted_ranges = config['PREPROCESSING'][f'{type}_remove_periods'].split('&')
-            if blacklisted_ranges[0] != '':
-                for __range in blacklisted_ranges:
-                    start, end = __range.split(',')
-                    start = datetime.strptime(start, r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
-                    end = datetime.strptime(end, r'%Y-%m-%d').replace(tzinfo=datetime.now().astimezone().tzinfo)
-                    df = remove_data_between_dates(df, start, end)     
-                    df = df.reset_index(drop=True)
                     
             # Do the same, but use anomalies from anomalies.yaml
             for anomaly in anomalies_list:
