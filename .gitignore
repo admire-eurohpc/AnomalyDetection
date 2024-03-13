@@ -15,3 +15,4 @@ data/*csv
 wandb_private.key
 wandb/
 artifacts/
+slurm_logs/
