@@ -1,10 +1,11 @@
 from collections import defaultdict
+import copy
 import numpy as np
 from ae_encoder import CNN_encoder, CNN_LSTM_encoder
 from ae_decoder import CNN_decoder, CNN_LSTM_decoder
 from ae_litmodel import LitAutoEncoder, LSTM_AE
 from ae_lstm_vae import LSTMVAE, LSTMEncoder, LSTMDecoder
-from ae_dataloader import TimeSeriesDataset
+from timeseriesdatasetv2 import TimeSeriesDatasetv2
 
 import lightning as L 
 import os
@@ -299,7 +300,7 @@ class ModelInference:
             
         return output
     
-    def calculate_reconstruction_error(self, original_data: np.ndarray, reconstructed_data: np.ndarray, metric: str = 'L1') -> float:
+    def calculate_reconstruction_error(self, original_data: np.ndarray, reconstructed_data: np.ndarray, metric: str = 'L1', batch_axis: int = 0) -> dict:
         '''
         Compute the L1 reconstruction error between the original and reconstructed data.
         
@@ -307,22 +308,35 @@ class ModelInference:
             - original_data (np.ndarray): Original data.
             - reconstructed_data (np.ndarray): Reconstructed data.
             - metric (str): Metric to be used for the reconstruction error. Default: 'L1'
+            - batch_axis (int): Axis of the batch. Default: 0
             
         Returns:
-            - float: Reconstruction error.
+            - dict
+                - np.ndarray: Reconstruction error per_sample_and_channel. Shape is (n_samples, n_features).
+                - np.ndarray: Reconstruction error per-sample. Shape is (n_samples,).
+                - np.ndarray: Reconstruction error per-batch. Shape is (1,).
         '''
         assert original_data.shape == reconstructed_data.shape, \
             f"Original and reconstructed data must have the same shape. Original: {original_data.shape}, Reconstructed: {reconstructed_data.shape}"
             
         match metric:
             case 'L1':
-                error = np.mean(np.abs(original_data - reconstructed_data))
+                per_sample_and_channel = np.abs(original_data - reconstructed_data).mean(axis=2)
+                error_per_sample = np.abs(original_data - reconstructed_data).mean(axis=(1, 2))
+                error_per_batch = np.abs(original_data - reconstructed_data).mean()
             case 'L2':
-                error = np.mean((original_data - reconstructed_data) ** 2)
+                per_sample_and_channel = np.square(original_data - reconstructed_data).mean(axis=2)
+                error_per_sample = np.square(original_data - reconstructed_data).mean(axis=(1, 2))
+                error_per_batch = np.square(original_data - reconstructed_data).mean()
             case _:
-                raise ValueError(f"Metric {metric} not supported. Supported metrics: ['L1', 'L2']")
+                raise ValueError(f"Metric {metric} not supported.")
             
-        return error    
+        return {
+            'per_sample_and_channel': per_sample_and_channel,
+            'per_sample': error_per_sample,
+            'per_batch': error_per_batch
+        }    
+            
         
     def __array_to_tensor(self, data: np.ndarray) -> torch.Tensor:
         '''
@@ -339,7 +353,7 @@ class ModelInference:
   
 class DataLoaderService:
     
-    dataset: TimeSeriesDataset = None
+    dataset: TimeSeriesDatasetv2 = None
     dataset_length: int = None
     
     def __init__(self, 
@@ -350,7 +364,7 @@ class DataLoaderService:
         nodes_count: int = 4
         ) -> None:
         
-        self.dataset = TimeSeriesDataset(
+        self.dataset = TimeSeriesDatasetv2(
             data_dir=data_dir,
             normalize=data_normalization,
             window_size=window_size,
@@ -416,19 +430,6 @@ class ReplayExperiment:
             slide_length=experiment_config['slide_length'],
             nodes_count=experiment_config['nodes_count']
         )
-        
-    def replay_single_window(self, idx: int) -> np.ndarray:
-        '''
-        Replay the experiment.
-        
-        Parameters:
-            - idx (int): Index of the data window.
-            
-        Returns:
-            - np.ndarray: Inferred data.
-        '''
-        data = self.data_loader.get_data_window(idx)
-        return self.model_inference.infer(data)
     
     def replay_entire_time_series(self, print_debug: bool = True) -> np.ndarray:
         '''
@@ -437,35 +438,54 @@ class ReplayExperiment:
         Returns:
             - np.ndarray: Inferred data.
         '''
-        
         length = self.data_loader.dataset_length
-        metrics: defaultdict[str, list[float]] = defaultdict(list)
+        channels = self.data_loader.dataset.time_series.shape[1]
+        nodes = self.data_loader.dataset.time_series.shape[0]
+        
+        metrics_per_windowL1 = {
+            'per_sample_and_channel': np.empty(shape=(length, nodes, channels)),
+            'per_sample': np.empty(shape=(length, nodes)),
+            'per_batch': np.empty(shape=(length,))
+        }
+        metrics_per_windowL2 = copy.deepcopy(metrics_per_windowL1)
         
         for i in range(length):
             data = self.data_loader.get_data_window(i)
-            data = data.unsqueeze(0)
             
             if print_debug:
                 print(f"Replaying window {i}... Data shape: {data.shape}")
+            
+            # inferred_data = np.empty_like(data)
+            
+            # for j in range(nodes):
+            #     _data = data[j].unsqueeze(0)
+            #     _inferred_data = self.model_inference.infer(_data)
+            #     inferred_data[j] = _inferred_data
             
             inferred_data = self.model_inference.infer(data)
             original_data = data.cpu().numpy()
             
             # Calculate the reconstruction error
-            errorL1 = self.model_inference.calculate_reconstruction_error(original_data, inferred_data, metric='L1')
-            errorL2 = self.model_inference.calculate_reconstruction_error(original_data, inferred_data, metric='L2')
+            errorL1_dict = self.model_inference.calculate_reconstruction_error(original_data, inferred_data, metric='L1')
+            errorL2_dict = self.model_inference.calculate_reconstruction_error(original_data, inferred_data, metric='L2')
+
+            # Save the metrics
+            metrics_per_windowL1['per_sample_and_channel'][i] = errorL1_dict['per_sample_and_channel']
+            metrics_per_windowL1['per_sample'][i] = errorL1_dict['per_sample']
+            metrics_per_windowL1['per_batch'][i] = errorL1_dict['per_batch']
             
-            metrics['L1'].append(errorL1)
-            metrics['L2'].append(errorL2)
-            
-            if print_debug:
-                print(f"Window {i}: L1 error: {errorL1}, L2 error: {errorL2}")
+            metrics_per_windowL2['per_sample_and_channel'][i] = errorL2_dict['per_sample_and_channel']
+            metrics_per_windowL2['per_sample'][i] = errorL2_dict['per_sample']
+            metrics_per_windowL2['per_batch'][i] = errorL2_dict['per_batch']
                 
-            # TODO: This is just debug. Remove it later
+            # TODO: This is just for debug. Remove it later
             if i == 10:
                 break
     
-        return metrics
+        return {
+            'L1': metrics_per_windowL1,
+            'L2': metrics_per_windowL2
+        }
           
     
 if __name__ == '__main__':    
