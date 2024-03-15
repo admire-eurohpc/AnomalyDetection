@@ -370,7 +370,7 @@ class DataLoaderService:
         Returns:
             - torch.Tensor: Data window.
         '''
-        return self.dataset[idx]
+        return self.dataset.__getitem__(idx)
     
     def get_entire_time_series(self) -> np.ndarray:
         '''
@@ -443,11 +443,17 @@ class ReplayExperiment:
         
         for i in range(length):
             data = self.data_loader.get_data_window(i)
+            data = data.unsqueeze(0)
+            
+            if print_debug:
+                print(f"Replaying window {i}... Data shape: {data.shape}")
+            
             inferred_data = self.model_inference.infer(data)
+            original_data = data.cpu().numpy()
             
             # Calculate the reconstruction error
-            errorL1 = self.model_inference.calculate_reconstruction_error(data, inferred_data, metric='L1')
-            errorL2 = self.model_inference.calculate_reconstruction_error(data, inferred_data, metric='L2')
+            errorL1 = self.model_inference.calculate_reconstruction_error(original_data, inferred_data, metric='L1')
+            errorL2 = self.model_inference.calculate_reconstruction_error(original_data, inferred_data, metric='L2')
             
             metrics['L1'].append(errorL1)
             metrics['L2'].append(errorL2)
@@ -461,11 +467,7 @@ class ReplayExperiment:
     
         return metrics
           
-        
-
-
-  
-  
+    
 if __name__ == '__main__':    
     experiment_config = {
         'model': 'LSTMCNN',
@@ -476,7 +478,7 @@ if __name__ == '__main__':
         'nodes_count': 200
     }
     
-    replay = ReplayExperiment(experiment_config)
+    replay = ReplayExperiment(experiment_config, print_debug=True)
     metrics = replay.replay_entire_time_series()
     
     print(metrics)
