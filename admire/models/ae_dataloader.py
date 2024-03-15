@@ -24,7 +24,8 @@ class TimeSeriesDataset(Dataset):
                  normalize: bool = True,
                  window_size: int = 60,
                  slide_length: int = 1,
-                 external_transform: Transform = None
+                 external_transform: Transform = None,
+                 nodes_count: int = None
                  ) -> None:
         '''
         `data_dir`: Directory where the data is stored
@@ -34,6 +35,7 @@ class TimeSeriesDataset(Dataset):
         `window_size`: Size of the window to use for the time series
         `slide_length`: How many time steps to slide the window by
         `external_transform`: If you want to use a pre-fitted transform, pass it here
+        `nodes_count`: Number of nodes to process. If None, it will use the value from the config file
         '''
 
         self.time_series: npt.NDarray = None
@@ -43,7 +45,7 @@ class TimeSeriesDataset(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.normalize = normalize
-        self.nodes_count = config.getint('PREPROCESSING', 'nodes_count_to_process')
+        self.nodes_count = nodes_count if nodes_count else config.getint('PREPROCESSING', 'nodes_count_to_process')
         
         # Get all filenames in data_dir
         _, _, filenames = os.walk(data_dir).__next__()
