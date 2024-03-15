@@ -1,7 +1,10 @@
+from collections import defaultdict
+import numpy as np
 from ae_encoder import CNN_encoder, CNN_LSTM_encoder
 from ae_decoder import CNN_decoder, CNN_LSTM_decoder
 from ae_litmodel import LitAutoEncoder, LSTM_AE
 from ae_lstm_vae import LSTMVAE, LSTMEncoder, LSTMDecoder
+from ae_dataloader import TimeSeriesDataset
 
 import lightning as L 
 import os
@@ -19,16 +22,19 @@ class ModelLoaderService:
     supported_model_types: list[str] = ['CNN', 'LSTMCNN', 'LSTMVAE', 'LSTMPLAIN']
     model_type: str = None
     is_model_loaded: bool = False
+    hyperparameters: dict = None
     
-    def __init__(self, model_type: str):
+    def __init__(self, model_type: str, print_debug: bool = True) -> None:
         '''
         Parameters:
             - model_type (str): Type of the model to be used. 
+            - print_debug (bool): Whether to print debug information. Default: True
         '''
         assert model_type.upper() in self.supported_model_types, \
             f"Model type {model_type} not supported. Supported model types: {self.supported_model_types}"
             
         self.model_type = model_type.upper()
+        self.print_debug = print_debug
     
     def load_model_from_local(self, model_path: str, hparams: dict | str, device: str = 'cpu'):
         '''
@@ -82,6 +88,7 @@ class ModelLoaderService:
         
         # Get the hyperparameters
         model_parameters = run_config['model_parameters'.upper()]
+        self.hyperparameters = model_parameters
         
         # Load the model
         match self.model_type:
@@ -123,7 +130,8 @@ class ModelLoaderService:
           
         # Load the model from the checkpoint
         self.model = LitAutoEncoder.load_from_checkpoint(model_path, map_location=device, encoder=cnn_lstm_encoder, decoder=cnn_lstm_decoder)
-        print(self.model)
+        if self.print_debug:
+            print(self.model)
         
         # Load the weights of the sub-models
         # This is according to: https://lightning.ai/docs/pytorch/stable/common/checkpointing_basic.html
@@ -220,8 +228,255 @@ class ModelLoaderService:
         '''
         print(self.model)
   
-if __name__ == '__main__':
-    model_service = ModelLoaderService('LSTMCNN')
-    model_service.load_model_from_wandb(run_id='e_standard-2024_02_20-14_08_29')
-    model_service.print_model_summary()
+  
+class ModelInference:
     
+    model: L.LightningModule = None
+    model_type: str = None
+    hyperparameters: dict = None
+    device: str = None
+     
+    def __init__(self, 
+        model: L.LightningModule,
+        model_type: str,
+        hyperparameters: dict,
+        device: str = 'cpu'
+        ) -> None:
+        '''
+        Parameters:
+            - model (L.LightningModule): Model to be used for inference.
+            - model_type (str): Type of the model.
+            - hyperparameters (dict): Hyperparameters of the model.
+            - device (str): Device to load the model on. Default: 'cpu'
+        '''
+        self.device = device
+        self.hyperparameters = hyperparameters
+        self.model = model
+        self.model_type = model_type
+        
+        # Set the model to the device
+        self.model.to(self.device)
+        
+        # Set the model to evaluation mode
+        self.model.eval()
+               
+    def infer(self, data: torch.Tensor | np.ndarray) -> np.ndarray:
+        '''
+        Infer the data using the model.
+        
+        Parameters:
+            - data (torch.Tensor | np.ndarray): Data to be inferred.
+            
+        Returns:
+            - torch.Tensor: Inferred data.
+        '''
+        # Convert the data to tensor if it is numpy array
+        if isinstance(data, np.ndarray):
+            data = self.__array_to_tensor(data)
+            
+        # Move the data to the device
+        if data.device != self.device:
+            data = data.to(self.device)
+            
+        # Infer the data
+        with torch.no_grad():
+            output: torch.Tensor = self.model(data)
+            
+        # Move the data and output back to the CPU
+        # and numpy array 
+        output = output.cpu().numpy()
+        input_data = data.cpu().numpy()
+        
+        
+        # Make sure that the output has the same shape as the input
+        # Or try to reshape it
+        if input_data.shape != output.shape:
+            try:
+                output = output.reshape(input_data.shape)
+            except Exception as e:
+                logging.error(f"Error during reshaping the output: {e}")
+                raise ValueError("Output shape does not match the input shape.")
+            
+        return output
+    
+    def calculate_reconstruction_error(self, original_data: np.ndarray, reconstructed_data: np.ndarray, metric: str = 'L1') -> float:
+        '''
+        Compute the L1 reconstruction error between the original and reconstructed data.
+        
+        Parameters:
+            - original_data (np.ndarray): Original data.
+            - reconstructed_data (np.ndarray): Reconstructed data.
+            - metric (str): Metric to be used for the reconstruction error. Default: 'L1'
+            
+        Returns:
+            - float: Reconstruction error.
+        '''
+        assert original_data.shape == reconstructed_data.shape, \
+            f"Original and reconstructed data must have the same shape. Original: {original_data.shape}, Reconstructed: {reconstructed_data.shape}"
+            
+        match metric:
+            case 'L1':
+                error = np.mean(np.abs(original_data - reconstructed_data))
+            case 'L2':
+                error = np.mean((original_data - reconstructed_data) ** 2)
+            case _:
+                raise ValueError(f"Metric {metric} not supported. Supported metrics: ['L1', 'L2']")
+            
+        return error    
+        
+    def __array_to_tensor(self, data: np.ndarray) -> torch.Tensor:
+        '''
+        Convert numpy array to torch tensor.
+        
+        Parameters:
+            - data (np.ndarray): Data to be converted.
+            
+        Returns:
+            - torch.Tensor: Converted data.
+        '''
+        return torch.tensor(data, device=self.device)     
+  
+  
+class DataLoaderService:
+    
+    dataset: TimeSeriesDataset = None
+    dataset_length: int = None
+    
+    def __init__(self, 
+        data_dir: str,
+        data_normalization: bool = True,
+        window_size: int = 60,
+        slide_length: int = 1,
+        nodes_count: int = 4
+        ) -> None:
+        
+        self.dataset = TimeSeriesDataset(
+            data_dir=data_dir,
+            normalize=data_normalization,
+            window_size=window_size,
+            slide_length=slide_length,
+            nodes_count=nodes_count
+        )
+        
+        self.dataset_length = len(self.dataset)
+        
+    def get_data_window(self, idx: int) -> torch.Tensor:
+        '''
+        Get the data window from the dataset.
+        
+        Parameters:
+            - idx (int): Index of the data window.
+            
+        Returns:
+            - torch.Tensor: Data window.
+        '''
+        return self.dataset[idx]
+    
+    def get_entire_time_series(self) -> np.ndarray:
+        '''
+        Get the time series from the dataset.
+        
+        Returns:
+            - np.ndarray: Time series.
+        '''
+        return self.dataset.get_time_series()
+ 
+  
+class ReplayExperiment:
+    
+    model_service: ModelLoaderService = None
+    model_inference: ModelInference = None
+    data_loader: DataLoaderService = None
+    
+    def __init__(self, experiment_config: dict[str, str], print_debug: bool = True) -> None:
+        self.experiment_config = experiment_config
+        
+        # Create the model loader service
+        self.model_service = ModelLoaderService(experiment_config['model'])
+        self.model_service.load_model_from_wandb(run_id=experiment_config['run_id'])
+        if print_debug:
+            self.model_service.print_model_summary()
+            
+        # Create the model inference service
+        self.model_inference = ModelInference(
+            model=self.model_service.get_model(),
+            model_type=self.model_service.get_model_type(),
+            hyperparameters=self.model_service.hyperparameters
+        )
+        
+        
+        # Create the data loader service
+        model_hparams = self.model_service.hyperparameters
+        window_size = int(model_hparams['window_size'])
+        
+        self.data_loader = DataLoaderService(
+            data_dir=experiment_config['data_dir'],
+            data_normalization=experiment_config['data_normalization'],
+            window_size=window_size,
+            slide_length=experiment_config['slide_length'],
+            nodes_count=experiment_config['nodes_count']
+        )
+        
+    def replay_single_window(self, idx: int) -> np.ndarray:
+        '''
+        Replay the experiment.
+        
+        Parameters:
+            - idx (int): Index of the data window.
+            
+        Returns:
+            - np.ndarray: Inferred data.
+        '''
+        data = self.data_loader.get_data_window(idx)
+        return self.model_inference.infer(data)
+    
+    def replay_entire_time_series(self, print_debug: bool = True) -> np.ndarray:
+        '''
+        Replay the entire time series.
+        
+        Returns:
+            - np.ndarray: Inferred data.
+        '''
+        
+        length = self.data_loader.dataset_length
+        metrics: defaultdict[str, list[float]] = defaultdict(list)
+        
+        for i in range(length):
+            data = self.data_loader.get_data_window(i)
+            inferred_data = self.model_inference.infer(data)
+            
+            # Calculate the reconstruction error
+            errorL1 = self.model_inference.calculate_reconstruction_error(data, inferred_data, metric='L1')
+            errorL2 = self.model_inference.calculate_reconstruction_error(data, inferred_data, metric='L2')
+            
+            metrics['L1'].append(errorL1)
+            metrics['L2'].append(errorL2)
+            
+            if print_debug:
+                print(f"Window {i}: L1 error: {errorL1}, L2 error: {errorL2}")
+                
+            # TODO: This is just debug. Remove it later
+            if i == 10:
+                break
+    
+        return metrics
+          
+        
+
+
+  
+  
+if __name__ == '__main__':    
+    experiment_config = {
+        'model': 'LSTMCNN',
+        'run_id': 'e_standard-2024_02_20-14_08_29',
+        'data_dir': 'data/processed/train_up_to_december_test_feb_to_march_200nodes/test',
+        'data_normalization': True,
+        'slide_length': 1,
+        'nodes_count': 200
+    }
+    
+    replay = ReplayExperiment(experiment_config)
+    metrics = replay.replay_entire_time_series()
+    
+    print(metrics)
