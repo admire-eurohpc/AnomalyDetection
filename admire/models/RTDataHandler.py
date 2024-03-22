@@ -10,7 +10,7 @@ from timeseriesdatasetv2 import TimeSeriesDatasetv2
 
 
 class RTDataHandler:
-    def __init__(self,) -> None:
+    def __init__(self, data_dir: str = 'data/processed/turin_demo_top200') -> None:
         '''
         For simulation purposes we need to check time of invoking RTDataHandler to read/save proper data.
         We don't need year, month, day information since it's only one day of data passing through
@@ -22,6 +22,9 @@ class RTDataHandler:
         self.hour = current_time.hour
         self.minute = current_time.minute
         self.batch_time = 5 #TODO : remove hardcoding
+        
+        # General data directory
+        self.data_dir = data_dir
 
     def connect_to_db(self) -> redis.client.Redis:
         r = redis.Redis(host='localhost', port=6379, decode_responses=True)
@@ -39,7 +42,7 @@ class RTDataHandler:
         - We cut first data batch at the end of script life
         '''
         db_dataloader = TimeSeriesDatasetv2(
-            data_dir='data/processed/turin_demo_top200/valid_data',
+            data_dir=f'{self.data_dir}/valid_data',
             normalize=True,
             window_size=5,
             slide_length=1,
@@ -51,7 +54,7 @@ class RTDataHandler:
     
     def trim_db_data(self):
         db_dataloader = TimeSeriesDatasetv2(
-            data_dir='data/processed/turin_demo_top200/valid_data',
+            data_dir=f'{self.data_dir}/valid_data',
             normalize=True,
             window_size=5,
             slide_length=1,
@@ -63,7 +66,7 @@ class RTDataHandler:
 
     def get_history(self) -> tuple[np.array, List, Dict[str, datetime]]:
         history_dataloader = TimeSeriesDatasetv2(
-            data_dir='data/processed/turin_demo_top200/history',
+            data_dir=f'{self.data_dir}/history',
             normalize=True,
             window_size=60,
             slide_length=1,
@@ -105,7 +108,7 @@ class RTDataHandler:
         '''
         pass
 
-    def caluclate_metrics(self):
+    def caluclate_metrics(self, data: np.ndarray) -> dict:
         '''
         Metrics Evaluator for short data batches.
         '''
@@ -123,6 +126,7 @@ class RTDataHandler:
         history_new = np.concatenate((history, data_batch), axis=2)
 
         #calculate metrics here
+        self.caluclate_metrics(history_new)
     
         dates_range_new={}
         dates_range_new['start'] = dates_range['start'].replace(hour=self.hour, minute=self.minute)
@@ -134,6 +138,8 @@ class RTDataHandler:
         print(end-start)
 
 if __name__ == '__main__':
+    test_data = 'data/processed/dev'
+    
     #For testing purposes feeding date from bash script
-    logger = RTDataHandler()
+    logger = RTDataHandler(data_dir=test_data)
     logger.run()
