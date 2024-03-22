@@ -269,7 +269,7 @@ class ModelInference:
             - data (torch.Tensor | np.ndarray): Data to be inferred.
             
         Returns:
-            - torch.Tensor: Inferred data.
+            - np.ndarray: Inferred data.
         '''
         # Convert the data to tensor if it is numpy array
         if isinstance(data, np.ndarray):
