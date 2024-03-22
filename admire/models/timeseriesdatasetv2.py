@@ -115,3 +115,11 @@ class TimeSeriesDatasetv2(Dataset):
     def get_time_series(self):
         '''Returns the time series. If normalized, returns the denormalized time series'''  
         return self.time_series
+    
+    def get_node_names(self):
+        '''Return filenames in order of reading'''
+        return self.filenames
+    
+    def get_dates_range(self) -> Dict[str, datetime]:
+        '''Returns the start and end dates of the time series'''
+        return self.dates_range
