@@ -6,11 +6,16 @@ from datetime import datetime
 from typing import Dict, List
 
 from timeseriesdatasetv2 import TimeSeriesDatasetv2
+from RTMetricsEvaluator import RTMetricsEvaluator
 
 
 
 class RTDataHandler:
-    def __init__(self,) -> None:
+    def __init__(self, 
+            data_dir: str, 
+            inference_model_config: dict[str, str],
+            debug_printing: bool = False
+        ) -> None:
         '''
         For simulation purposes we need to check time of invoking RTDataHandler to read/save proper data.
         We don't need year, month, day information since it's only one day of data passing through
@@ -22,6 +27,11 @@ class RTDataHandler:
         self.hour = current_time.hour
         self.minute = current_time.minute
         self.batch_time = 5 #TODO : remove hardcoding
+        
+        # General data directory
+        self.data_dir = data_dir
+        self.debug_printing = debug_printing
+        self.metrics_evaluator = RTMetricsEvaluator(model_config=inference_model_config, print_debug=debug_printing)
 
     def connect_to_db(self) -> redis.client.Redis:
         r = redis.Redis(host='localhost', port=6379, decode_responses=True)
@@ -39,7 +49,7 @@ class RTDataHandler:
         - We cut first data batch at the end of script life
         '''
         db_dataloader = TimeSeriesDatasetv2(
-            data_dir='data/processed/turin_demo_top200/valid_data',
+            data_dir=f'{self.data_dir}/valid_data',
             normalize=True,
             window_size=5,
             slide_length=1,
@@ -51,7 +61,7 @@ class RTDataHandler:
     
     def trim_db_data(self):
         db_dataloader = TimeSeriesDatasetv2(
-            data_dir='data/processed/turin_demo_top200/valid_data',
+            data_dir=f'{self.data_dir}/valid_data',
             normalize=True,
             window_size=5,
             slide_length=1,
@@ -63,7 +73,7 @@ class RTDataHandler:
 
     def get_history(self) -> tuple[np.array, List, Dict[str, datetime]]:
         history_dataloader = TimeSeriesDatasetv2(
-            data_dir='data/processed/turin_demo_top200/history',
+            data_dir=f'{self.data_dir}/history',
             normalize=True,
             window_size=60,
             slide_length=1,
@@ -105,11 +115,18 @@ class RTDataHandler:
         '''
         pass
 
-    def caluclate_metrics(self):
+    def caluclate_metrics(self, metric: str = 'L1') -> dict:
         '''
         Metrics Evaluator for short data batches.
         '''
-        pass
+        metrics_dict = self.metrics_evaluator.calculate_metrics_for_last_window(rec_metric=metric)
+        
+        if self.debug_printing:
+            print(f'Calculated metrics: {metrics_dict}')
+        
+        return metrics_dict
+        
+        
 
     def run(self,) -> None:
         #db = self.connect_to_db()
@@ -122,7 +139,6 @@ class RTDataHandler:
         #data on which we want to perform metrics calculation
         history_new = np.concatenate((history, data_batch), axis=2)
 
-        #calculate metrics here
     
         dates_range_new={}
         dates_range_new['start'] = dates_range['start'].replace(hour=self.hour, minute=self.minute)
@@ -130,10 +146,27 @@ class RTDataHandler:
 
         self.save_history(history_new[:,:,self.batch_time:], node_names, dates_range_new)
         print(np.shape(history_new))
+        
+        #calculate metrics here
+        self.caluclate_metrics()
+        
         end = time.time()
         print(end-start)
 
 if __name__ == '__main__':
+    
+    # 'data/processed/turin_demo_top200'
+    test_data = 'data/processed/dev'
+    
+    model_config = {
+        'model': 'LSTMCNN',
+        'run_id': 'e_standard-2024_02_20-14_08_29',
+        'data_dir': 'data/processed/dev/history',
+        'data_normalization': True,
+        'slide_length': 1,
+        'nodes_count': 200
+    }
+    
     #For testing purposes feeding date from bash script
-    logger = RTDataHandler()
+    logger = RTDataHandler(data_dir=test_data, inference_model_config=model_config, debug_printing=True)
     logger.run()
