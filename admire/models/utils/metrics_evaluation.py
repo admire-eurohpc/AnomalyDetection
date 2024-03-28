@@ -257,7 +257,15 @@ class MetricsEvaluator:
     
     @staticmethod
     def average_past_window(x, w):
-        """Average over the past w elements of x"""
+        """
+        Average over the past w elements of x
+        
+        Parameters:
+            - x: np.array
+                Array of shape (n_timesteps,)
+            - w: int
+                Window size
+        """
         x = np.array(x)
         x_padded = np.pad(x, (w-1, 0), mode='constant', constant_values=np.mean(x))
         
@@ -268,6 +276,30 @@ class MetricsEvaluator:
         x_rolling = x_rolling[w-1:]
         
         return x_rolling
+    
+    @staticmethod
+    def average_past_window_per_node(x, w):
+        """
+        Average over the past w elements of x per node
+        
+        Parameters:
+            - x: np.array
+                Array of shape (n_timesteps, n_nodes)
+            - w: int
+                Window size
+                
+        Returns:
+            - x_rolling: np.array
+                Array of shape (n_timesteps, n_nodes)
+        """
+        x_rolling = np.zeros_like(x)
+        for i in range(x.shape[1]):
+            x_rolling[:, i] = MetricsEvaluator.average_past_window(x[:, i], w)
+            
+        return x_rolling
+
+
+
 
     @staticmethod
     def calculate_windowed_metrics(
