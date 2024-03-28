@@ -45,4 +45,23 @@ class Transform:
         Return: Reverted normalized time series as numpy array
         '''
         return time_series * (self.max - self.min) + self.min
+    
+    def serialize(self) -> dict:
+        '''
+        Serialize the transformation
         
+        Return: Dictionary with the transformation
+        '''
+        return {
+            'min': self.min,
+            'max': self.max
+        }
+    
+    def create_from_dict(self, data: dict) -> None:
+        '''
+        Create a transformation from a dictionary
+        
+        `data`: Dictionary with the transformation
+        '''
+        self.min = data['min']
+        self.max = data['max']
