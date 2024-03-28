@@ -6,6 +6,7 @@ from datetime import datetime
 import pandas as pd
 import argparse
 import wandb
+import pickle
 
 # -- Pytorch imports --
 import torch
@@ -24,6 +25,7 @@ from ae_litmodel import LitAutoEncoder, LSTM_AE
 from ae_dataloader import TimeSeriesDataset
 from utils.config_reader import read_config
 from utils.metrics_evaluation import MetricsEvaluator
+from utils.transformations import Transform
 from ae_eval_model import run_test
 from ae_lstm_vae import LSTMVAE, LSTMEncoder, LSTMDecoder
 
@@ -132,9 +134,12 @@ if __name__ == "__main__":
                                 window_size=WINDOW_SIZE, 
                                 slide_length=TRAIN_SLIDE)
     
+    data_transform: Transform = dataset.get_transform_object()
+    
     test_dataset = TimeSeriesDataset(data_dir=f"{PROCESSED_DATA_DIR}/test/",
                                         normalize=True,
                                         window_size=WINDOW_SIZE,
+                                        external_transform=data_transform,
                                         slide_length=TEST_SLIDE)
     
     train_loader = DataLoader(
@@ -187,8 +192,13 @@ if __name__ == "__main__":
                 hparams[save_key][param] = config_dict[key][param]
     
     hparams['TRAINING']['full_training_logs_dir'] = logdir
-    
     logger.log_hyperparams(hparams)
+    
+    # SAVE TRANSFORM
+    artifact = wandb.Artifact(name="Transform", type="object")
+    with artifact.new_file("transform.pkl", mode="wb") as f:
+        pickle.dump(data_transform, f)  
+    run.log_artifact(artifact)
     # ---------------- #
     
     # -- MODEL -- #
