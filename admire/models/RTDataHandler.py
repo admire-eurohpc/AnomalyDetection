@@ -4,6 +4,7 @@ import redis
 import time
 from datetime import datetime
 from typing import Dict, List
+import os
 
 from timeseriesdatasetv2 import TimeSeriesDatasetv2
 from RTMetricsEvaluator import RTMetricsEvaluator
@@ -20,82 +21,96 @@ class RTDataHandler:
         For simulation purposes we need to check time of invoking RTDataHandler to read/save proper data.
         We don't need year, month, day information since it's only one day of data passing through
         Intentionally omitting seconds, cause you can easily find required data through hour and minute values
-        TODO : decide if we want to simulate hour from 00:00 of 23th or if we want to check current hour and assume that history end at current time
+
+        Simulation performed assuming history starting at current_hour - self.batch_time
+        History lenght : 1 day
+        Simulated_db_data length : 1 day
         '''
         #For now implementing second option
         current_time = datetime.now()
+        self.r = redis.Redis(host='localhost', port=6379, decode_responses=True)
         self.hour = current_time.hour
         self.minute = current_time.minute
-        self.batch_time = 5 #TODO : remove hardcoding
+        self.batch_time = 5 #TODO : remove hardcoding, it would be best to include this information and number of nodes in config data provided to RTDataHandler
         
         # General data directory
         self.data_dir = data_dir
         self.debug_printing = debug_printing
         self.metrics_evaluator = RTMetricsEvaluator(model_config=inference_model_config, print_debug=debug_printing)
 
-    def connect_to_db(self) -> redis.client.Redis:
-        r = redis.Redis(host='localhost', port=6379, decode_responses=True)
-        return r
-    
-    def log_to_db(self,) -> None:
-        pass
+    def log_to_db(self, nodenames: List, metrics: Dict) -> None:
+        '''
+        Logs to redis information provided by RTMetricsEvaluator.
+        We are logging 2 information per node : 
+        - anomaly_detected (bool)
+        - z-score or some other metric indicating deviation from group mean
+
+        For now abandoning time-series approach as it needs newest glibc which may not be present at Turin Cluster
+        '''
+        redis_data = dict([nodename, recon_error] for nodename, recon_error in zip(nodenames, metrics['per_node_metrics_df']['r_err']))
+        self.r.hmset('anomaly-detection', redis_data)
     
     def get_new_data_from_db(self) -> np.array:
         '''
-        Default pipeline for feeding data every 5 minutes.
-        TODO: How to ensure reading proper data when script is automatically started every 5 minutes?
-        Possibilities : 
-        - Cron starting every 5 minutes the bash script with RTDataHandler and passing an argument (internal bash iterator).
-        - We cut first data batch at the end of script life
+        Default pipeline for feeding data every n minutes.
+        TODO: How to ensure reading proper data when script is automatically started every n minutes?
+        Desired solution : 
+        - Cron starting every 5 minutes the bash script with RTDataHandler
+        - Each time Cron invokes script, it reads first n minutes of data and then cuts it off
         '''
         db_dataloader = TimeSeriesDatasetv2(
             data_dir=f'{self.data_dir}/valid_data',
             normalize=True,
-            window_size=5,
+            window_size=self.batch_time,
             slide_length=1,
             nodes_count=200
         )
         data_batch = db_dataloader[0].numpy()
-        print(np.shape(data_batch))
+
         return data_batch
     
     def trim_db_data(self):
+        '''
+        Cuts first n minutes of data, so each time Cron invokes the script, first n minutes of data are the proper ones to read
+        '''
         db_dataloader = TimeSeriesDatasetv2(
             data_dir=f'{self.data_dir}/valid_data',
             normalize=True,
-            window_size=5,
+            window_size=self.batch_time,
             slide_length=1,
             nodes_count=200
         )
         data_batch = db_dataloader.get_time_series()
-        pass
+        node_names = db_dataloader.get_node_names()
+        dates_range = db_dataloader.get_dates_range()
+        dates_range['start'] = dates_range['start'].replace(minute=(dates_range['start'].minute+self.batch_time)%60)
+        data_batch_new = data_batch[:,:,self.batch_time:]
+        self.save_dataset(data_batch_new, node_names, dates_range=dates_range, dir=os.path.join(self.data_dir, 'valid_data_updated'))
 
 
     def get_history(self) -> tuple[np.array, List, Dict[str, datetime]]:
         history_dataloader = TimeSeriesDatasetv2(
             data_dir=f'{self.data_dir}/history',
             normalize=True,
-            window_size=60,
+            window_size=self.batch_time,
             slide_length=1,
             nodes_count=200
         )
         history = history_dataloader.get_time_series()
         node_names = history_dataloader.get_node_names()
         dates_range = history_dataloader.get_dates_range()
+
         #Setting history dates_range to batch_time minutes before so with addition of current batch we get current time
-        # TODO: Technically we need to only to it once at the beginning of demo, let's try to find a better way to implement it
-        dates_range['start'] = dates_range['start'].replace(hour=self.hour, minute=self.minute-self.batch_time)
-        dates_range['end'] = dates_range['end'].replace(hour=self.hour, minute=self.minute-self.batch_time)
-        print(dates_range)
+        dates_range['start'] = dates_range['start'].replace(hour=self.hour, minute=(self.minute-self.batch_time)%60)
+        dates_range['end'] = dates_range['end'].replace(hour=self.hour, minute=(self.minute-self.batch_time)%60)
+
         return history, node_names, dates_range
     
-    def save_history(self, history: np.array, node_names: list, dates_range: Dict[str, datetime]) -> pd.DataFrame:
+    def save_dataset(self, history: np.array, node_names: List, dates_range: Dict[str, datetime], dir: str) -> pd.DataFrame:
         for elem, filename in zip(history, node_names):
             _df = pd.DataFrame(np.transpose(elem), columns = ['power', 'cpu1', 'cpu2', 'cpus_alloc'])
             _df['date'] = pd.date_range(dates_range['start'], dates_range['end'], freq='1min', tz='UTC')
-            #_df.to_feather(os.path.join('data/processed/turin_demo_top200/history_updated', filename + '.feather'))
-        print('kkk', np.shape(history))
-        pass
+            _df.to_feather(os.path.join(dir, filename + '.feather'))
     
     def get_metrics_from_db(self, ) -> dict:
         '''
@@ -129,39 +144,39 @@ class RTDataHandler:
         
 
     def run(self,) -> None:
-        #db = self.connect_to_db()
-        #db.set('foo', 'bar')
         start = time.time()
-        #get database data 
+
+        #get simulated db data
         data_batch = self.get_new_data_from_db()
+
         #get history data
         history, node_names, dates_range = self.get_history()
-        #data on which we want to perform metrics calculation
+
         history_new = np.concatenate((history, data_batch), axis=2)
 
-    
         dates_range_new={}
         dates_range_new['start'] = dates_range['start'].replace(hour=self.hour, minute=self.minute)
         dates_range_new['end'] = dates_range['end'].replace(hour=self.hour, minute=self.minute)
 
-        self.save_history(history_new[:,:,self.batch_time:], node_names, dates_range_new)
-        print(np.shape(history_new))
+        self.save_dataset(history_new[:,:,self.batch_time:], node_names, dates_range_new, os.path.join(self.data_dir, 'history_updated'))
         
-        #calculate metrics here
-        self.caluclate_metrics()
-        
+        self.trim_db_data()
+
+        metrics = self.caluclate_metrics()
+
+        self.log_to_db(node_names, metrics)
+
         end = time.time()
         print(end-start)
 
 if __name__ == '__main__':
     
-    # 'data/processed/turin_demo_top200'
-    test_data = 'data/processed/dev'
+    test_data = 'data/processed/turin_demo_top200'
     
     model_config = {
         'model': 'LSTMCNN',
         'run_id': 'e_standard-2024_02_20-14_08_29',
-        'data_dir': 'data/processed/dev/history',
+        'data_dir': 'data/processed/turin_demo_top200/history',
         'data_normalization': True,
         'slide_length': 1,
         'nodes_count': 200
