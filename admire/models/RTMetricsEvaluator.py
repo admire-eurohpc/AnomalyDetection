@@ -5,6 +5,10 @@ import copy
 from utils.metrics_evaluation import MetricsEvaluator
 from RT_model_wrapper import ModelLoaderService, ModelInference, DataLoaderService
 
+MINUTES_TO_USE = 360
+LONG_WINDOW_SIZE = 180
+SHORT_WINDOW_SIZE = 60
+
 class RTMetricsEvaluator:
     
     metrics_evaluator: MetricsEvaluator = None
@@ -14,8 +18,8 @@ class RTMetricsEvaluator:
     
     def __init__(self, model_config: dict[str, str], 
             print_debug: bool = False,
-            long_window_size: int = 60,
-            short_window_size: int = 10
+            long_window_size: int = LONG_WINDOW_SIZE,
+            short_window_size: int = SHORT_WINDOW_SIZE
         ) -> None:
         '''
         Initialize the RTMetricsEvaluator.
@@ -124,11 +128,29 @@ class RTMetricsEvaluator:
             last_diff_significant = True
             
         # Check which nodes contribute the most to the difference
-        # TODO: Implement this
-        print('WARNING: Node contribution to the difference is not implemented yet.')
+        pc_sliding_window_mean_long = MetricsEvaluator.average_past_window_per_node(comprehensive_metrics['per_sample'], self.long_window_size)
+        pc_sliding_window_mean_short = MetricsEvaluator.average_past_window_per_node(comprehensive_metrics['per_sample'], self.short_window_size)
+        pc_sliding_window_mean_long = pc_sliding_window_mean_long[:len(pc_sliding_window_mean_long)-self.long_window_size]
+        pc_sliding_window_mean_short = pc_sliding_window_mean_short[:len(pc_sliding_window_mean_short)-self.long_window_size]
+        
+        # Calculate the difference per channel
+        pc_difference = pc_sliding_window_mean_short - pc_sliding_window_mean_long
+        pc_avg = np.mean(pc_difference, axis=0)
+        pc_std = np.std(pc_difference, axis=0)
+        
+        # Check if the difference is significant in the last window ie we think that there exi
+        pc_last_diff = pc_difference[-1]
+        pc_sum = np.sum(pc_last_diff)
+        pc_last_diff_normalized = pc_last_diff / pc_sum # Now each element is the contribution of the node to the difference in percentage
+        
+        pc_last_diff_significant = np.abs(pc_last_diff) > pc_avg + 2 * pc_std
+        
         
         return {
-            'last_window_is_anomaly': last_diff_significant
+            'last_window_is_anomaly': last_diff_significant,
+            'last_window_is_anomaly_per_node': pc_last_diff_significant,
+            'nodes_contribution_to_difference': pc_last_diff,
+            'nodes_contribution_to_difference_normalized': pc_last_diff_normalized,
         }
     
     # TODO: Not used in the current implementation
@@ -158,7 +180,7 @@ class RTMetricsEvaluator:
             'total_rec_error_std': total_rec_error_std
         }
         
-    def __obtain_reconstruction_error_for_entire_time_series(self, minutes_to_use: int = 360, rec_metric: str = 'L1') -> dict:
+    def __obtain_reconstruction_error_for_entire_time_series(self, minutes_to_use: int = MINUTES_TO_USE, rec_metric: str = 'L1') -> dict:
         '''
         Obtain the reconstruction error for the entire time series.
         
@@ -172,23 +194,27 @@ class RTMetricsEvaluator:
         '''
         assert minutes_to_use > 0, 'minutes_to_use must be greater than 0.'
         
-        length = self.data_loader.dataset_length
+        length = self.data_loader.dataset_length # The length of the entire time series
         channels = self.data_loader.dataset.time_series.shape[1]
         nodes = self.data_loader.dataset.time_series.shape[0]
         
         assert length - minutes_to_use >= 0, 'minutes_to_use must be less than the length of the time series.'
         
+        shortened_length = length - minutes_to_use # The length of the time series to use for the calculation of historic metrics
+        
         comprehensive_metrics = {
-            'per_sample_and_channel': np.empty(shape=(length, nodes, channels)),
-            'per_sample': np.empty(shape=(length, nodes,)),
-            'per_batch': np.empty(shape=(length,))
+            'per_sample_and_channel': np.empty(shape=(shortened_length, nodes, channels)),
+            'per_sample': np.empty(shape=(shortened_length, nodes,)),
+            'per_batch': np.empty(shape=(shortened_length,))
         }
         
-        for i in range(length - minutes_to_use, length):
-            data = self.data_loader.get_data_window(i)
+        for _iter, window_index in enumerate(range(length - minutes_to_use, length)):
+            # _iter is the index of the window in the shortened time series -- so it starts from 0 and goes to minutes_to_use
+            # window_index is the index of the window in the original time series -- so it starts from length - minutes_to_use and goes to length
+            data = self.data_loader.get_data_window(window_index)
             
             if self.print_debug:
-                print(f"Replaying window {i}... Data shape: {data.shape}")
+                print(f"Replaying window {window_index}... Data shape: {data.shape}")
             
             inferred_data = self.model_inference.infer(data)
             original_data = data.cpu().numpy()
@@ -196,9 +222,9 @@ class RTMetricsEvaluator:
             # Calculate the reconstruction error
             errorL1_dict = self.model_inference.calculate_reconstruction_error(original_data, inferred_data, metric='L1')
             
-            comprehensive_metrics['per_sample_and_channel'][i] = errorL1_dict['per_sample_and_channel']
-            comprehensive_metrics['per_sample'][i] = errorL1_dict['per_sample']
-            comprehensive_metrics['per_batch'][i] = errorL1_dict['per_batch']
+            comprehensive_metrics['per_sample_and_channel'][_iter] = errorL1_dict['per_sample_and_channel']
+            comprehensive_metrics['per_sample'][_iter] = errorL1_dict['per_sample']
+            comprehensive_metrics['per_batch'][_iter] = errorL1_dict['per_batch']
         
         return comprehensive_metrics
         
