@@ -5,9 +5,14 @@ import time
 from datetime import datetime
 from typing import Dict, List
 import os
+import wandb
+import pickle
 
 from timeseriesdatasetv2 import TimeSeriesDatasetv2
 from RTMetricsEvaluator import RTMetricsEvaluator
+
+from utils.transformations import Transform
+
 
 
 
@@ -37,6 +42,14 @@ class RTDataHandler:
         self.data_dir = data_dir
         self.debug_printing = debug_printing
         self.metrics_evaluator = RTMetricsEvaluator(model_config=inference_model_config, print_debug=debug_printing)
+        
+        # Get the transform object
+        self.wandb_entity = inference_model_config['entity']
+        self.wandb_project = inference_model_config['project']
+        self.wandb_run_id = inference_model_config['run_id']
+        
+        # Get the transform object
+        self.__get_transform()
 
     def log_to_db(self, nodenames: List, metrics: Dict) -> None:
         '''
@@ -61,6 +74,7 @@ class RTDataHandler:
         db_dataloader = TimeSeriesDatasetv2(
             data_dir=f'{self.data_dir}/valid_data',
             normalize=True,
+            external_transform=self.transform,
             window_size=self.batch_time,
             slide_length=1,
             nodes_count=200
@@ -76,6 +90,7 @@ class RTDataHandler:
         db_dataloader = TimeSeriesDatasetv2(
             data_dir=f'{self.data_dir}/valid_data',
             normalize=True,
+            external_transform=self.transform,
             window_size=self.batch_time,
             slide_length=1,
             nodes_count=200
@@ -92,6 +107,7 @@ class RTDataHandler:
         history_dataloader = TimeSeriesDatasetv2(
             data_dir=f'{self.data_dir}/history',
             normalize=True,
+            external_transform=self.transform,
             window_size=self.batch_time,
             slide_length=1,
             nodes_count=200
@@ -105,6 +121,22 @@ class RTDataHandler:
         dates_range['end'] = dates_range['end'].replace(hour=self.hour, minute=(self.minute-self.batch_time)%60)
 
         return history, node_names, dates_range
+    
+    def __get_transform(self) -> Transform:
+        '''
+        Get the Transform object from wandb
+        '''
+        # Set up the API
+        api = wandb.Api()
+        run = api.run(f"{self.wandb_entity}/{self.wandb_project}/{self.wandb_run_id}")
+        
+        # Get the artifact and download the model to local directory
+        artifact = api.artifact(f'{self.wandb_entity}/{self.wandb_project}/Transform:v0', type='object')
+        path = artifact.download()
+        path = os.path.join(path, 'transform.pkl')
+        
+        with open(path, 'rb') as f:
+            self.transform: Transform = pickle.load(f)
     
     def save_dataset(self, history: np.array, node_names: List, dates_range: Dict[str, datetime], dir: str) -> pd.DataFrame:
         for elem, filename in zip(history, node_names):
@@ -176,6 +208,9 @@ if __name__ == '__main__':
     model_config = {
         'model': 'LSTMCNN',
         'run_id': 'e_standard-2024_02_20-14_08_29',
+        'entity': "ignacysteam",
+        'project': "lightning_logs",
+        'model_tag': "v0",
         'data_dir': 'data/processed/turin_demo_top200/history',
         'data_normalization': True,
         'slide_length': 1,
