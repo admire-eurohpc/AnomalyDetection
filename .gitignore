@@ -11,6 +11,7 @@
 images/
 *lightning_logs*
 data/*csv
+data/
 
 wandb_private.key
 wandb/
