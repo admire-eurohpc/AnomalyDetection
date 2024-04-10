@@ -207,7 +207,7 @@ if __name__ == '__main__':
     
     model_config = {
         'model': 'LSTMCNN',
-        'run_id': 'e_standard-2024_02_20-14_08_29',
+        'run_id': 'e_-2024_04_10-11_23_52',
         'entity': "ignacysteam",
         'project': "lightning_logs",
         'model_tag': "v0",
