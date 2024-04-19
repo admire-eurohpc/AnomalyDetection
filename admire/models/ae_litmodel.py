@@ -6,6 +6,9 @@ import lightning.pytorch as pl
 import torch
 import torch.nn.functional as F
 import logging
+import numpy as np
+import time
+
 
 # define the LightningModule
 class LitAutoEncoder(pl.LightningModule):
@@ -80,6 +83,19 @@ class LitAutoEncoder(pl.LightningModule):
         self.log('test_loss(mse)', loss)
         self.log('test_mae', self._get_reconstruction_mae(x, x_hat))
         self.log('test_mape', self._get_reconstruction_mape(x, x_hat))
+
+    def predict_step(self, batch, batch_idx):
+        x = torch.squeeze(batch)
+        if isinstance(x, np.ndarray):
+            x = torch.tensor(x, device='cpu')
+        
+        if x.device != 'cpu':
+            x = x.to(device='cpu')
+
+        # start = time.time()
+        x_hat = self.forward(x)
+        # print(time.time()-start, batch_idx)
+        return x_hat
 
 
     # def log_gradients_in_model(self, step):
@@ -242,6 +258,19 @@ class LSTM_AE(pl.LightningModule):
         self.log('test_loss(mse)', loss)
         self.log('test_mae', self._get_reconstruction_mae(x, x_hat))
         self.log('test_mape', self._get_reconstruction_mape(x, x_hat))
+
+    def predict_step(self, batch, batch_idx):
+        x = torch.squeeze(batch)
+        if isinstance(x, np.ndarray):
+            x = torch.tensor(x, device='cpu')
+        
+        if x.device != 'cpu':
+            x = x.to(device='cpu')
+
+        # start = time.time()
+        x_hat = self.forward(x)
+        # print(time.time()-start, batch_idx)
+        return x_hat
 
 
     # def log_gradients_in_model(self, step):

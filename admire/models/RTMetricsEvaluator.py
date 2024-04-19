@@ -1,9 +1,12 @@
 import numpy as np
 import pandas as pd
-import copy
 
+import torch.multiprocessing as mp
+import lightning.pytorch as pl
+
+from utils.callbacks import CustomWriter
 from utils.metrics_evaluation import MetricsEvaluator
-from RT_model_wrapper import ModelLoaderService, ModelInference, DataLoaderService
+from RT_model_wrapper import ModelLoaderService, ModelInference, DataLoaderService, Data_prep
 
 MINUTES_TO_USE = 360
 LONG_WINDOW_SIZE = 180
@@ -51,12 +54,12 @@ class RTMetricsEvaluator:
         
         # Create the data loader service
         model_hparams = self.model_service.hyperparameters
-        window_size = int(model_hparams['window_size'])
+        self.window_size = int(model_hparams['window_size'])
         
         self.data_loader = DataLoaderService(
             data_dir=model_config['data_dir'],
             data_normalization=model_config['data_normalization'],
-            window_size=window_size,
+            window_size=self.window_size,
             slide_length=model_config['slide_length'],
             nodes_count=model_config['nodes_count']
         )
@@ -202,31 +205,55 @@ class RTMetricsEvaluator:
         
         shortened_length = length - minutes_to_use # The length of the time series to use for the calculation of historic metrics
         
-        comprehensive_metrics = {
-            'per_sample_and_channel': np.empty(shape=(shortened_length, nodes, channels)),
-            'per_sample': np.empty(shape=(shortened_length, nodes,)),
-            'per_batch': np.empty(shape=(shortened_length,))
-        }
+
+        # mp_data_loader = DataLoaderService(
+        #     data_dir=self.model_config['data_dir'],
+        #     data_normalization=self.model_config['data_normalization'],
+        #     window_size=self.window_size,
+        #     slide_length=self.model_config['slide_length'],
+        #     nodes_count=self.model_config['nodes_count'],
+        #     num_workers=8,
+        #     prefetch_batches=2,
+        #     model=self.model_inference
+        # )
+
+        model = self.model_service.get_model()
+
+
+        data = Data_prep(data_dir=self.model_config['data_dir'],
+            data_normalization=self.model_config['data_normalization'],
+            window_size=self.window_size,
+            slide_length=self.model_config['slide_length'],
+            nodes_count=self.model_config['nodes_count'],)
+
+        pred_writer = CustomWriter(predictions=[])
+        trainer = pl.Trainer(accelerator='cpu', strategy='ddp', devices=4, callbacks=[pred_writer], use_distributed_sampler=False)
+        trainer.predict(model=model, dataloaders=data)
+
+        # for idx, data in enumerate(loader):
+        #     print(idx, data.shape)
+        #  # for idx, window_index in enumerate(range(length - minutes_to_use, length)):
+        # #     # _iter is the index of the window in the shortened time series -- so it starts from 0 and goes to minutes_to_use
+        # #     # window_index is the index of the window in the original time series -- so it starts from length - minutes_to_use and goes to length
+        # #     data_.append(self.data_loader.get_data_window(window_index))
         
-        for _iter, window_index in enumerate(range(length - minutes_to_use, length)):
-            # _iter is the index of the window in the shortened time series -- so it starts from 0 and goes to minutes_to_use
-            # window_index is the index of the window in the original time series -- so it starts from length - minutes_to_use and goes to length
-            data = self.data_loader.get_data_window(window_index)
+
+        #     # if self.print_debug:
+        #     #     print(f"Replaying window {window_index}... Data shape: {data.shape}")
             
-            if self.print_debug:
-                print(f"Replaying window {window_index}... Data shape: {data.shape}")
+        #     # inferred_data = self.model_inference.infer(data)
+        #     # original_data = data.cpu().numpy()
             
-            inferred_data = self.model_inference.infer(data)
-            original_data = data.cpu().numpy()
+        #     # # Calculate the reconstruction error
+        #     # errorL1_dict = self.model_inference.calculate_reconstruction_error(original_data, inferred_data, metric='L1')
             
-            # Calculate the reconstruction error
-            errorL1_dict = self.model_inference.calculate_reconstruction_error(original_data, inferred_data, metric='L1')
-            
-            comprehensive_metrics['per_sample_and_channel'][_iter] = errorL1_dict['per_sample_and_channel']
-            comprehensive_metrics['per_sample'][_iter] = errorL1_dict['per_sample']
-            comprehensive_metrics['per_batch'][_iter] = errorL1_dict['per_batch']
+        #     # comprehensive_metrics['per_sample_and_channel'][_iter] = errorL1_dict['per_sample_and_channel']
+        #     # comprehensive_metrics['per_sample'][_iter] = errorL1_dict['per_sample']
+        #     # comprehensive_metrics['per_batch'][_iter] = errorL1_dict['per_batch']
         
-        return comprehensive_metrics
+        # # return comprehensive_metrics
+        # end = time.time()
+        # print(end-start, np.shape(data_), np.shape(inferred_data))
         
     def __obtain_reconstruction_error_for_a_window(self, data: np.ndarray, rec_metric: str = 'L1') -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         '''
