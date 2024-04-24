@@ -189,10 +189,10 @@ def run_test(autoencoder: L.LightningModule,
 
     hostnames = test_dataset.get_filenames()
 
+    stats_df = pd.DataFrame(test_recon_mae_np, index=hostnames, columns=test_date_range[0:len(test_recon_mae_np[0])].astype(str))
     if save_rec_err_to_parquet:
         # Save reconstruction error to parquet
         try:
-            stats_df = pd.DataFrame(test_recon_mae_np, index=hostnames, columns=test_date_range[0:len(test_recon_mae_np[0])].astype(str))
             stats_df.to_parquet(os.path.join(save_eval_path, 'recon_error.parquet'))
             
             # artifact = wandb.Artifact(name="reconstruction_error", type='parquet')
