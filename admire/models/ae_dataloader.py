@@ -162,6 +162,9 @@ class TimeSeriesDataset(Dataset):
         '''Returns the start and end dates of the time series'''
         return self.dates_range
     
+    def get_transform_object(self) -> Transform:
+        return self.transform
+    
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
