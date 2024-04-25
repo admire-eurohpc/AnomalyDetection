@@ -388,6 +388,9 @@ class Data_prep(pl.LightningDataModule):
         pred_sampler = DistributedSampler(self.dataset, shuffle=False)
         pred_dataloader = DataLoader(self.dataset, sampler=pred_sampler)
         return pred_dataloader
+    
+    def __len__(self):
+        return self.dataset.__len__()
 
 
 

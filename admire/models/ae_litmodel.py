@@ -1,6 +1,7 @@
 import os
 from typing import Any
 from torch import optim, nn, utils, Tensor
+import torch.distributed
 from torchmetrics import MeanAbsoluteError, R2Score, MeanAbsolutePercentageError
 import lightning.pytorch as pl
 import torch
@@ -8,6 +9,7 @@ import torch.nn.functional as F
 import logging
 import numpy as np
 import time
+import itertools
 
 
 # define the LightningModule
@@ -28,6 +30,10 @@ class LitAutoEncoder(pl.LightningModule):
 
         self.mae = MeanAbsoluteError()
         self.mape = MeanAbsolutePercentageError()
+
+        self.prediction_idx = []
+        self.predict_step_outputs = []
+        self.predict_outputs = None
         
         
         
@@ -85,18 +91,30 @@ class LitAutoEncoder(pl.LightningModule):
         self.log('test_mape', self._get_reconstruction_mape(x, x_hat))
 
     def predict_step(self, batch, batch_idx):
-        x = torch.squeeze(batch)
+        x, idx = batch
+        x = torch.squeeze(x)
         if isinstance(x, np.ndarray):
             x = torch.tensor(x, device='cpu')
         
         if x.device != 'cpu':
             x = x.to(device='cpu')
 
-        # start = time.time()
         x_hat = self.forward(x)
-        # print(time.time()-start, batch_idx)
+        self.predict_step_outputs.append(x_hat)
+        self.prediction_idx.append(idx)
         return x_hat
+    
+        
+    def on_predict_epoch_end(self) -> None:
+        gathered_pred = [None] * torch.distributed.get_world_size()
+        gathered_idxs = [None] * torch.distributed.get_world_size()
+        torch.distributed.all_gather_object(gathered_pred, self.predict_step_outputs)
+        torch.distributed.all_gather_object(gathered_idxs, self.prediction_idx)
+        self.predict_outputs = np.reshape(gathered_pred, (1384, 200, 4, 60))
+        self.prediction_idx = list(itertools.chain.from_iterable(gathered_idxs))
 
+    def on_predict_end(self) -> None:
+        return (self.predict_outputs, self.prediction_idx)
 
     # def log_gradients_in_model(self, step):
     #     for tag, value in self.named_parameters():

@@ -1,8 +1,10 @@
 import numpy as np
 import pandas as pd
+import itertools
 
 import torch.multiprocessing as mp
 import lightning.pytorch as pl
+import torch
 
 from utils.callbacks import CustomWriter
 from utils.metrics_evaluation import MetricsEvaluator
@@ -226,10 +228,22 @@ class RTMetricsEvaluator:
             slide_length=self.model_config['slide_length'],
             nodes_count=self.model_config['nodes_count'],)
 
-        pred_writer = CustomWriter(predictions=[])
-        trainer = pl.Trainer(accelerator='cpu', strategy='ddp', devices=4, callbacks=[pred_writer], use_distributed_sampler=False)
-        trainer.predict(model=model, dataloaders=data)
+        #pred_writer = CustomWriter(predictions=[])
 
+        trainer = pl.Trainer(accelerator='cpu', strategy='ddp', devices=4, callbacks=[], use_distributed_sampler=False)
+        trainer.predict(model=model, dataloaders=data, return_predictions=False)
+        if trainer.is_global_zero:
+
+            outputs, idxs = model.on_predict_end()
+            idxs = list(itertools.chain.from_iterable([y.tolist() for y in idxs]))
+            outputs = [x for (y,x) in sorted(zip(idxs,outputs), key=lambda pair: pair[0])]
+
+            excess_sample_nb = len(outputs) - len(data)
+
+            outputs = outputs[:-excess_sample_nb]
+
+
+        
         # for idx, data in enumerate(loader):
         #     print(idx, data.shape)
         #  # for idx, window_index in enumerate(range(length - minutes_to_use, length)):
@@ -254,6 +268,7 @@ class RTMetricsEvaluator:
         # # return comprehensive_metrics
         # end = time.time()
         # print(end-start, np.shape(data_), np.shape(inferred_data))
+        return outputs
         
     def __obtain_reconstruction_error_for_a_window(self, data: np.ndarray, rec_metric: str = 'L1') -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         '''
@@ -268,7 +283,7 @@ class RTMetricsEvaluator:
                 the per node reconstruction error, and the total reconstruction error.
         '''
         assert rec_metric in ['L1', 'L2'], 'rec_metric must be either "L1" or "L2".'
-        
+        data = data[0]
         inferred_data = self.model_inference.infer(data)
         
         error_dict =  self.model_inference.calculate_reconstruction_error(data, inferred_data, metric=rec_metric)

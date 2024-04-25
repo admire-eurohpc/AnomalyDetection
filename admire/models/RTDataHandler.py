@@ -65,7 +65,7 @@ class RTDataHandler:
             slide_length=1,
             nodes_count=200
         )
-        data_batch = db_dataloader[0].numpy()
+        data_batch = db_dataloader[0][0].numpy()
 
         return data_batch
     
