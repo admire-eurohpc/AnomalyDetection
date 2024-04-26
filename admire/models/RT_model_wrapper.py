@@ -18,9 +18,7 @@ import logging
 import yaml
 import ast
 import torch
-import queue
-import multiprocessing as mp
-from itertools import cycle
+
 
 
 class ModelLoaderService:
@@ -358,7 +356,7 @@ class ModelInference:
         '''
         return torch.tensor(data, device=self.device)     
 
-class Data_prep(pl.LightningDataModule):
+class Prepare_distributed_data(pl.LightningDataModule):
     def __init__(self,
                     data_dir: str,
                     data_normalization: bool = True,
@@ -392,20 +390,6 @@ class Data_prep(pl.LightningDataModule):
     def __len__(self):
         return self.dataset.__len__()
 
-
-
-  
-# def worker_fn(dataset, index_queue, output_queue):
-#     while True:
-#         # Worker function, simply reads indices from index_queue, and adds the
-#         # dataset element to the output_queue
-#         try:
-#             index = index_queue.get(timeout=0)
-#         except queue.Empty:
-#             continue
-#         if index is None:
-#             break
-#         output_queue.put((index, dataset[index]))
   
 class DataLoaderService:
     
@@ -416,12 +400,8 @@ class DataLoaderService:
         data_dir: str,
         data_normalization: bool = True,
         window_size: int = 60,
-        # batch_size: int = 1,
         slide_length: int = 1,
         nodes_count: int = 4,
-        # num_workers: int = 1,
-        # prefetch_batches: int = 2,
-        # model: ModelInference = None,
         ) -> None:
         
         self.dataset = TimeSeriesDatasetv2(
@@ -432,30 +412,9 @@ class DataLoaderService:
             nodes_count=nodes_count
         )
         
-        # self.model = model
-        # self.index = 0
-        # self.num_workers = num_workers
-        # self.prefetch_batches = prefetch_batches
-        # self.output_queue = mp.Queue()
-        # self.index_queues = []
-        # self.workers = []
-        # self.worker_cycle = cycle(range(num_workers))
-        # self.cache = {}
-        # self.prefetch_index = 0
-        # self.batch_size = batch_size
+
         self.dataset_length = len(self.dataset)
 
-        # for _ in range(num_workers):
-        #     index_queue = mp.Queue()
-        #     worker = mp.Process(
-        #         target=worker_fn, args=(self.dataset, index_queue, self.output_queue)
-        #     )
-        #     worker.daemon = True
-        #     worker.start()
-        #     self.workers.append(worker)
-        #     self.index_queues.append(index_queue)
-
-        # self.prefetch()
         
     def get_data_window(self, idx: int) -> torch.Tensor:
         '''
@@ -478,68 +437,4 @@ class DataLoaderService:
         '''
         return self.dataset.get_time_series()
     
-    # def prefetch(self):
-    #     while (
-    #         self.prefetch_index < len(self.dataset)
-    #         and self.prefetch_index
-    #         < self.index + self.prefetch_batches * self.num_workers * self.batch_size
-    #     ):
-    #         # if the prefetch_index hasn't reached the end of the dataset
-    #         # and it is not 2 batches ahead, add indexes to the index queues
-    #         # print(f"prefetch index: {self.prefetch_index}, index {self.index + self.prefetch_batches * self.num_workers * self.batch_size}")
-    #         # print(f"prefetching :{self.prefetch_index} sample")
-    #         self.index_queues[next(self.worker_cycle)].put(self.prefetch_index)
-    #         self.prefetch_index += 1
-
-    # def __len__(self):
-    #     return self.dataset.__len__()
-
-    # def __next__(self):
-    #     if self.index >= len(self.dataset):
-    #         raise StopIteration
-    #     batch_size = min(len(self.dataset) - self.index, self.batch_size)
-    #     return self.model.infer(self.get())
-    
-    # def __iter__(self):
-    #     self.index = 0
-    #     self.cache = {}
-    #     self.prefetch_index = 0
-    #     self.prefetch()
-    #     return self
-
-    # def get(self):
-    #     self.prefetch()
-    #     if self.index in self.cache:
-    #         item = self.cache[self.index]
-    #         del self.cache[self.index]
-    #     else:
-    #         while True:
-    #             try:
-    #                 (index, data) = self.output_queue.get(timeout=0)
-    #             except queue.Empty:  # output queue empty, keep trying
-    #                 continue
-    #             if index == self.index:  # found our item, ready to return
-    #                 item = data
-    #                 break
-    #             else:  # item isn't the one we want, cache for later
-    #                 self.cache[index] = data
-
-    #     self.index += 1
-    #     return item
-
-
-    # def __del__(self):
-    #     try:
-    #         for i, w in enumerate(self.workers):
-    #             self.index_queues[i].put(None)
-    #             w.join(timeout=5.0)
-    #         for q in self.index_queues:
-    #             q.cancel_join_thread()
-    #             q.close()
-    #         self.output_queue.cancel_join_thread()
-    #         self.output_queue.close()
-    #     finally:
-    #         for w in self.workers:
-    #             if w.is_alive():
-    #                 w.terminate()
-  
+   
