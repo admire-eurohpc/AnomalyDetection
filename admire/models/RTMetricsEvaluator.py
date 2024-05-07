@@ -42,7 +42,13 @@ class RTMetricsEvaluator:
         
         # Create the model loader service
         self.model_service = ModelLoaderService(model_config['model'])
-        self.model_service.load_model_from_wandb(run_id=model_config['run_id'])
+        self.model_service.load_model_from_wandb(
+            run_id=model_config['run_id'],
+            entity=model_config['entity'],
+            project=model_config['project'],
+            model_tag=model_config['model_tag']
+        )
+        
         if print_debug:
             self.model_service.print_model_summary()
             

@@ -13,7 +13,8 @@ conf="config200.ini"
 models_to_run=(LSTMVAE LSTMCNN)
 
 echo "Activating the virtual environment"
-source /home/users/ignacys/pl0134-01/project_data/pyvenv/bin/activate
+source /mnt/storage_3/home/ignacys/pl0134-02/project_data/anaconda3/bin/activate
+conda activate admire
 echo "Virtual environment activated"
 
 # Prepare data
