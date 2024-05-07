@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 import redis
 import time
+import os
+import torch.multiprocessing
+
 from datetime import datetime
 from typing import Dict, List
 import os
@@ -79,7 +82,7 @@ class RTDataHandler:
             slide_length=1,
             nodes_count=200
         )
-        data_batch = db_dataloader[0].numpy()
+        data_batch = db_dataloader[0][0].numpy()
 
         return data_batch
     
@@ -176,6 +179,7 @@ class RTDataHandler:
         
 
     def run(self,) -> None:
+        torch.multiprocessing.set_sharing_strategy('file_system')
         start = time.time()
 
         #get simulated db data

@@ -1,9 +1,13 @@
 import numpy as np
 import pandas as pd
-import copy
+import itertools
+import tqdm
+
+import torch.multiprocessing as mp
+import lightning.pytorch as pl
 
 from utils.metrics_evaluation import MetricsEvaluator
-from RT_model_wrapper import ModelLoaderService, ModelInference, DataLoaderService
+from RT_model_wrapper import ModelLoaderService, ModelInference, DataLoaderService, Prepare_distributed_data
 
 MINUTES_TO_USE = 360
 LONG_WINDOW_SIZE = 180
@@ -57,12 +61,12 @@ class RTMetricsEvaluator:
         
         # Create the data loader service
         model_hparams = self.model_service.hyperparameters
-        window_size = int(model_hparams['window_size'])
+        self.window_size = int(model_hparams['window_size'])
         
         self.data_loader = DataLoaderService(
             data_dir=model_config['data_dir'],
             data_normalization=model_config['data_normalization'],
-            window_size=window_size,
+            window_size=self.window_size,
             slide_length=model_config['slide_length'],
             nodes_count=model_config['nodes_count']
         )
@@ -185,7 +189,16 @@ class RTMetricsEvaluator:
             'total_rec_error_mean': total_rec_error_mean,
             'total_rec_error_std': total_rec_error_std
         }
-        
+    
+
+    def multiprocess_recon_error(self, sample):
+        _iter, window_idx = sample
+        original_data = self.data_loader.get_data_window(window_idx)[0].cpu().detach().numpy()
+        inferred_data = self.outputs[_iter]
+        errorL1_dict = self.model_inference.calculate_reconstruction_error(original_data, inferred_data, metric='L1')
+        return _iter, errorL1_dict
+    
+
     def __obtain_reconstruction_error_for_entire_time_series(self, minutes_to_use: int = MINUTES_TO_USE, rec_metric: str = 'L1') -> dict:
         '''
         Obtain the reconstruction error for the entire time series.
@@ -207,31 +220,48 @@ class RTMetricsEvaluator:
         assert length - minutes_to_use >= 0, 'minutes_to_use must be less than the length of the time series.'
         
         shortened_length = length - minutes_to_use # The length of the time series to use for the calculation of historic metrics
-        
+
         comprehensive_metrics = {
             'per_sample_and_channel': np.empty(shape=(shortened_length, nodes, channels)),
             'per_sample': np.empty(shape=(shortened_length, nodes,)),
             'per_batch': np.empty(shape=(shortened_length,))
         }
+
+
+        model = self.model_service.get_model()
+
+
+        data = Prepare_distributed_data(data_dir=self.model_config['data_dir'],
+            data_normalization=self.model_config['data_normalization'],
+            window_size=self.window_size,
+            slide_length=self.model_config['slide_length'],
+            nodes_count=self.model_config['nodes_count'],)
+
+
+        trainer = pl.Trainer(accelerator='cpu', strategy='ddp', devices=4, callbacks=[], use_distributed_sampler=False)
+        trainer.predict(model=model, dataloaders=data, return_predictions=False)
+        if trainer.global_rank == 0:
+            outputs, idxs = model.on_predict_end()
+            idxs = list(itertools.chain.from_iterable([y.tolist() for y in idxs]))
+            outputs = [x for (y,x) in sorted(zip(idxs,outputs), key=lambda pair: pair[0])]
+
+            excess_sample_nb = len(outputs) - len(data)
+
+        if trainer.global_rank > 0:
+            exit(0)
+
+        self.outputs = outputs[:-excess_sample_nb]
+
+        with mp.Pool(mp.cpu_count()) as pool:
+            for _iter, errorL1_dict in tqdm.tqdm(pool.imap(self.multiprocess_recon_error, enumerate(range(length - minutes_to_use, length)), chunksize=20),
+                                    desc="Running inference reconstruction error", 
+                                    total=len(range(length - minutes_to_use, length))):
+                comprehensive_metrics['per_sample_and_channel'][_iter] = errorL1_dict['per_sample_and_channel']
+                comprehensive_metrics['per_sample'][_iter] = errorL1_dict['per_sample']
+                comprehensive_metrics['per_batch'][_iter] = errorL1_dict['per_batch']
         
-        for _iter, window_index in enumerate(range(length - minutes_to_use, length)):
-            # _iter is the index of the window in the shortened time series -- so it starts from 0 and goes to minutes_to_use
-            # window_index is the index of the window in the original time series -- so it starts from length - minutes_to_use and goes to length
-            data = self.data_loader.get_data_window(window_index)
-            
-            if self.print_debug:
-                print(f"Replaying window {window_index}... Data shape: {data.shape}")
-            
-            inferred_data = self.model_inference.infer(data)
-            original_data = data.cpu().numpy()
-            
-            # Calculate the reconstruction error
-            errorL1_dict = self.model_inference.calculate_reconstruction_error(original_data, inferred_data, metric='L1')
-            
-            comprehensive_metrics['per_sample_and_channel'][_iter] = errorL1_dict['per_sample_and_channel']
-            comprehensive_metrics['per_sample'][_iter] = errorL1_dict['per_sample']
-            comprehensive_metrics['per_batch'][_iter] = errorL1_dict['per_batch']
-        
+        print("Calculating recon_error done")
+
         return comprehensive_metrics
         
     def __obtain_reconstruction_error_for_a_window(self, data: np.ndarray, rec_metric: str = 'L1') -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -247,7 +277,7 @@ class RTMetricsEvaluator:
                 the per node reconstruction error, and the total reconstruction error.
         '''
         assert rec_metric in ['L1', 'L2'], 'rec_metric must be either "L1" or "L2".'
-        
+        data = data[0]
         inferred_data = self.model_inference.infer(data)
         
         error_dict =  self.model_inference.calculate_reconstruction_error(data, inferred_data, metric=rec_metric)

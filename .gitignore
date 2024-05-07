@@ -2,6 +2,7 @@
 *.py[cod]
 *__pycache__*
 *.parquet
+*.feather
 *.zip
 .vscode/
 *.ipynb_checkpoints

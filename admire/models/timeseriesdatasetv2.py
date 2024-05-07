@@ -110,7 +110,7 @@ class TimeSeriesDatasetv2(Dataset):
     def __getitem__(self, idx): 
         start = idx * self.slide_length # Each window starts at a multiple of the slide length
         ts = self.time_series[:, :, start:start+self.window_size] # Get the window
-        return torch.Tensor(ts)
+        return (torch.Tensor(ts), idx)
     
     def get_time_series(self):
         '''Returns the time series. If normalized, returns the denormalized time series'''  

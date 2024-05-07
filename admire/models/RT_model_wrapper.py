@@ -7,6 +7,10 @@ from ae_litmodel import LitAutoEncoder, LSTM_AE
 from ae_lstm_vae import LSTMVAE, LSTMEncoder, LSTMDecoder
 from timeseriesdatasetv2 import TimeSeriesDatasetv2
 
+from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
+
+import lightning.pytorch as pl
 import lightning as L 
 import os
 import wandb
@@ -14,6 +18,8 @@ import logging
 import yaml
 import ast
 import torch
+
+
 
 class ModelLoaderService:
     '''
@@ -349,7 +355,41 @@ class ModelInference:
             - torch.Tensor: Converted data.
         '''
         return torch.tensor(data, device=self.device)     
-  
+
+class Prepare_distributed_data(pl.LightningDataModule):
+    def __init__(self,
+                    data_dir: str,
+                    data_normalization: bool = True,
+                    window_size: int = 60,
+                    nodes_count: int = 200,
+                    slide_length: int = 1,):
+        super().__init__()
+        self.prepare_data_per_node = True
+
+        self.data_dir = data_dir
+        self.data_normalization = data_normalization
+        self.window_size = window_size
+        self.nodes_count = nodes_count
+        self.slide_length = slide_length
+
+    def setup(self, stage: str):
+        if stage == 'predict':
+            self.dataset = TimeSeriesDatasetv2(
+                        data_dir=self.data_dir,
+                        normalize=self.data_normalization,
+                        window_size=self.window_size,
+                        slide_length=self.slide_length,
+                        nodes_count=self.nodes_count
+                        )
+
+    def predict_dataloader(self):
+        pred_sampler = DistributedSampler(self.dataset, shuffle=False)
+        pred_dataloader = DataLoader(self.dataset, sampler=pred_sampler)
+        return pred_dataloader
+    
+    def __len__(self):
+        return self.dataset.__len__()
+
   
 class DataLoaderService:
     
@@ -361,7 +401,7 @@ class DataLoaderService:
         data_normalization: bool = True,
         window_size: int = 60,
         slide_length: int = 1,
-        nodes_count: int = 4
+        nodes_count: int = 4,
         ) -> None:
         
         self.dataset = TimeSeriesDatasetv2(
@@ -372,7 +412,9 @@ class DataLoaderService:
             nodes_count=nodes_count
         )
         
+
         self.dataset_length = len(self.dataset)
+
         
     def get_data_window(self, idx: int) -> torch.Tensor:
         '''
@@ -394,5 +436,5 @@ class DataLoaderService:
             - np.ndarray: Time series.
         '''
         return self.dataset.get_time_series()
- 
-  
+    
+   
