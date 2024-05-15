@@ -44,7 +44,20 @@ class Transform:
         
         Return: Reverted normalized time series as numpy array
         '''
-        return time_series * (self.max - self.min) + self.min
+        _max = self.max.flatten()
+        _min = self.min.flatten()
+        
+        # Add the batch dimension to match the shape of the time series
+        # copy the min and max values along the batch dimension
+        _max = np.repeat(_max, time_series.shape[0], axis=0).reshape(time_series.shape[:2])
+        _min = np.repeat(_min, time_series.shape[0], axis=0).reshape(time_series.shape[:2])
+        
+        # Add empty dimension to match the shape of the time series
+        _max = np.expand_dims(_max, axis=2)
+        _min = np.expand_dims(_min, axis=2)
+        
+        
+        return time_series * (_max - _min) + _min
     
     def serialize(self) -> dict:
         '''
