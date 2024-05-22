@@ -47,17 +47,13 @@ class Transform:
         _max = self.max.flatten()
         _min = self.min.flatten()
         
-        # Add the batch dimension to match the shape of the time series
-        # copy the min and max values along the batch dimension
-        _max = np.repeat(_max, time_series.shape[0], axis=0).reshape(time_series.shape[:2])
-        _min = np.repeat(_min, time_series.shape[0], axis=0).reshape(time_series.shape[:2])
+        # Rearrange time_series
+        _time_series = time_series.transpose(0, 2, 1)
         
-        # Add empty dimension to match the shape of the time series
-        _max = np.expand_dims(_max, axis=2)
-        _min = np.expand_dims(_min, axis=2)
+        _time_series = _time_series * (_max - _min) + _min
         
-        
-        return time_series * (_max - _min) + _min
+        # Rearrange back
+        return _time_series.transpose(0, 2, 1)
     
     def serialize(self) -> dict:
         '''
