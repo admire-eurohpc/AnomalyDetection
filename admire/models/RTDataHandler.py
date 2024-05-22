@@ -10,6 +10,8 @@ from typing import Dict, List
 import os
 import wandb
 import pickle
+import sys
+sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 from timeseriesdatasetv2 import TimeSeriesDatasetv2
 from RTMetricsEvaluator import RTMetricsEvaluator
@@ -23,7 +25,8 @@ class RTDataHandler:
     def __init__(self, 
             data_dir: str, 
             inference_model_config: dict[str, str],
-            debug_printing: bool = False
+            debug_printing: bool = False,
+            just_debug: bool = False
         ) -> None:
         '''
         For simulation purposes we need to check time of invoking RTDataHandler to read/save proper data.
@@ -40,6 +43,8 @@ class RTDataHandler:
         self.hour = current_time.hour
         self.minute = current_time.minute
         self.batch_time = 5 #TODO : remove hardcoding, it would be best to include this information and number of nodes in config data provided to RTDataHandler
+        self.just_debug = just_debug
+        self.redis_data = None
         
         # General data directory
         self.data_dir = data_dir
@@ -52,6 +57,7 @@ class RTDataHandler:
         self.wandb_run_id = inference_model_config['run_id']
         
         # Get the transform object
+        self.transform: Transform = None
         self.__get_transform()
 
     def log_to_db(self, nodenames: List, metrics: Dict) -> None:
@@ -64,7 +70,12 @@ class RTDataHandler:
         For now abandoning time-series approach as it needs newest glibc which may not be present at Turin Cluster
         '''
         redis_data = dict([nodename, recon_error] for nodename, recon_error in zip(nodenames, metrics['per_node_metrics_df']['r_err']))
-        self.r.hmset('anomaly-detection', redis_data)
+        
+        if not self.just_debug:
+            self.r.hmset('anomaly-detection', redis_data)
+        else:
+            print(f'Logging to redis: {redis_data}')
+            self.redis_data = redis_data
     
     def get_new_data_from_db(self) -> np.array:
         '''
@@ -139,7 +150,7 @@ class RTDataHandler:
         path = os.path.join(path, 'transform.pkl')
         
         with open(path, 'rb') as f:
-            self.transform: Transform = pickle.load(f)
+            self.transform = pickle.load(f)
     
     def save_dataset(self, history: np.array, node_names: List, dates_range: Dict[str, datetime], dir: str) -> pd.DataFrame:
         for elem, filename in zip(history, node_names):
@@ -207,11 +218,12 @@ class RTDataHandler:
 
 if __name__ == '__main__':
     
+    print(os.getcwd())
     test_data = 'data/processed/turin_demo_top200'
     
     model_config = {
         'model': 'LSTMCNN',
-        'run_id': 'e_-2024_04_10-11_23_52',
+        'run_id': 'e_-2024_05_08-14_28_22',
         'entity': "ignacysteam",
         'project': "lightning_logs",
         'model_tag': "v0",

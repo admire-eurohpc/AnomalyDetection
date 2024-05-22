@@ -44,7 +44,16 @@ class Transform:
         
         Return: Reverted normalized time series as numpy array
         '''
-        return time_series * (self.max - self.min) + self.min
+        _max = self.max.flatten()
+        _min = self.min.flatten()
+        
+        # Rearrange time_series
+        _time_series = time_series.transpose(0, 2, 1)
+        
+        _time_series = _time_series * (_max - _min) + _min
+        
+        # Rearrange back
+        return _time_series.transpose(0, 2, 1)
     
     def serialize(self) -> dict:
         '''

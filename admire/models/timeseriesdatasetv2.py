@@ -65,8 +65,8 @@ class TimeSeriesDatasetv2(Dataset):
             _data = pd.read_parquet(
                         os.path.join(data_dir, filename), 
                         columns=columns
-                        ) \
-                    .to_numpy().T.reshape(len(columns), 1, -1) 
+                        )
+            _data = _data.to_numpy().T.reshape(len(columns), 1, -1) 
             if slide_length != 1:
                 cutoff_value = np.shape(_data)[2]%self.slide_length
                 _data = _data[:,:,:-cutoff_value]
@@ -91,7 +91,8 @@ class TimeSeriesDatasetv2(Dataset):
                 
         # It is important to convert to float32, otherwise pytorch will complain
         self.time_series = self.time_series.astype(np.float32)
-        self.time_series = np.reshape(self.time_series, (self.time_series.shape[1], self.time_series.shape[0], self.time_series.shape[2]))
+        # self.time_series = np.reshape(self.time_series, (self.time_series.shape[1], self.time_series.shape[0], self.time_series.shape[2]))
+        self.time_series = np.moveaxis(self.time_series, 1, 0) # Move the nodes axis to the front
         
         logging.debug(f"Time series shape: {self.time_series.shape}")
         print(f"Time series shape: {self.time_series.shape}")
