@@ -14,6 +14,7 @@ from timeseriesdatasetv2 import TimeSeriesDatasetv2
 from RTMetricsEvaluator import RTMetricsEvaluator
 
 from utils.transformations import Transform
+import argparse
 
 
 
@@ -215,20 +216,34 @@ class RTDataHandler:
 if __name__ == '__main__':
     
     print(os.getcwd())
-    test_data = 'data/processed/turin_demo_top200'
-    
+    parser = argparse.ArgumentParser(description='RTDataHandler')
+    parser.add_argument('--data_dir', type=str, default='data/processed/turin_demo_top200/history', help='General data directory')
+    parser.add_argument('--model', type=str, default='LSTMCNN', help='Model type')
+    parser.add_argument('--run_id', type=str, default='e_-2024_05_08-14_28_22', help='Run ID')
+    parser.add_argument('--entity', type=str, default='ignacysteam', help='Wandb entity')
+    parser.add_argument('--project', type=str, default='lightning_logs', help='Wandb project')
+    parser.add_argument('--model_tag', type=str, default='v0', help='Model tag')
+    parser.add_argument('--data_normalization', type=bool, default=True, help='Data normalization')
+    parser.add_argument('--slide_length', type=int, default=1, help='Slide length')
+    parser.add_argument('--nodes_count', type=int, default=200, help='Number of nodes')
+    parser.add_argument('--main_data_dir', type=str, default='data/processed/turin_demo_top200', help='General data directory')
+
+    args = parser.parse_args()
+
     model_config = {
-        'model': 'LSTMCNN',
-        'run_id': 'e_-2024_05_08-14_28_22',
-        'entity': "ignacysteam",
-        'project': "lightning_logs",
-        'model_tag': "v0",
-        'data_dir': 'data/processed/turin_demo_top200/history',
-        'data_normalization': True,
-        'slide_length': 1,
-        'nodes_count': 200
+        'model': args.model,
+        'run_id': args.run_id,
+        'entity': args.entity,
+        'project': args.project,
+        'model_tag': args.model_tag,
+        'data_dir': args.data_dir,
+        'data_normalization': args.data_normalization,
+        'slide_length': args.slide_length,
+        'nodes_count': args.nodes_count
     }
+
+    datadir = args.main_data_dir
     
-    #For testing purposes feeding date from bash script
-    logger = RTDataHandler(data_dir=test_data, inference_model_config=model_config, debug_printing=True)
+    logger = RTDataHandler(data_dir=datadir, inference_model_config=model_config, debug_printing=True)
     logger.run()
+    
