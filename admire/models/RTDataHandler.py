@@ -47,6 +47,7 @@ class RTDataHandler:
         self.batch_time = 5 #TODO : remove hardcoding, it would be best to include this information and number of nodes in config data provided to RTDataHandler
         self.just_debug = just_debug
         self.redis_data = None
+        self.nodes_count = inference_model_config['nodes_count']
         
         # General data directory
         self.data_dir = data_dir
@@ -95,7 +96,7 @@ class RTDataHandler:
             external_transform=self.transform,
             window_size=self.batch_time,
             slide_length=1,
-            nodes_count=66
+            nodes_count=self.nodes_count
         )
         data_batch = db_dataloader[0][0].numpy()
 
@@ -111,7 +112,7 @@ class RTDataHandler:
             external_transform=self.transform,
             window_size=self.batch_time,
             slide_length=1,
-            nodes_count=66
+            nodes_count=self.nodes_count
         )
         data_batch = db_dataloader.get_time_series()
         node_names = db_dataloader.get_node_names()
@@ -128,7 +129,7 @@ class RTDataHandler:
             external_transform=self.transform,
             window_size=self.batch_time,
             slide_length=1,
-            nodes_count=66
+            nodes_count=self.nodes_count
         )
         history = history_dataloader.get_time_series()
         node_names = history_dataloader.get_node_names()
