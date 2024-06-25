@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import Dataset
 import logging
 import tqdm
+from pathlib import Path
 
 from utils.transformations import Transform
 
@@ -75,7 +76,7 @@ class TimeSeriesDatasetv2(Dataset):
             else:
                 self.time_series = np.concatenate((self.time_series, _data), axis=1)
 
-            self.filenames.append(filename[0:5])
+            self.filenames.append(Path(filename).stem)
         logging.debug(f"Time series shape after concatenation: {self.time_series.shape}")
         print(f"Time series shape after concatenation: {self.time_series.shape}")
         

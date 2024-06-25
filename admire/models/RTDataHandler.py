@@ -3,6 +3,7 @@ import numpy as np
 import redis
 import time
 import os
+import json
 import torch.multiprocessing
 
 from datetime import datetime
@@ -27,7 +28,7 @@ class RTDataHandler:
             data_dir: str, 
             inference_model_config: dict[str, str],
             debug_printing: bool = False,
-            just_debug: bool = False
+            just_debug: bool = True
         ) -> None:
         '''
         For simulation purposes we need to check time of invoking RTDataHandler to read/save proper data.
@@ -70,13 +71,15 @@ class RTDataHandler:
 
         For now abandoning time-series approach as it needs newest glibc which may not be present at Turin Cluster
         '''
-        redis_data = dict([nodename, recon_error] for nodename, recon_error in zip(nodenames, metrics['per_node_metrics_df']['r_err']))
+        redis_data = dict([nodename, [recon_error, bool(is_anomaly)]] for nodename, recon_error, is_anomaly in zip(nodenames, metrics['per_node_metrics_df']['r_err'], metrics['last_window_is_anomaly_per_node']))
         
         if not self.just_debug:
             self.r.hmset('anomaly-detection', redis_data)
         else:
             print(f'Logging to redis: {redis_data}')
             self.redis_data = redis_data
+            with open('data/redis_data.json', 'w') as fp:
+                json.dump(redis_data, fp)
     
     def get_new_data_from_db(self) -> np.array:
         '''
@@ -92,7 +95,7 @@ class RTDataHandler:
             external_transform=self.transform,
             window_size=self.batch_time,
             slide_length=1,
-            nodes_count=200
+            nodes_count=66
         )
         data_batch = db_dataloader[0][0].numpy()
 
@@ -108,7 +111,7 @@ class RTDataHandler:
             external_transform=self.transform,
             window_size=self.batch_time,
             slide_length=1,
-            nodes_count=200
+            nodes_count=66
         )
         data_batch = db_dataloader.get_time_series()
         node_names = db_dataloader.get_node_names()
@@ -125,7 +128,7 @@ class RTDataHandler:
             external_transform=self.transform,
             window_size=self.batch_time,
             slide_length=1,
-            nodes_count=200
+            nodes_count=66
         )
         history = history_dataloader.get_time_series()
         node_names = history_dataloader.get_node_names()
@@ -185,6 +188,8 @@ class RTDataHandler:
         
         if self.debug_printing:
             print(f'Calculated metrics: {metrics_dict}')
+            with open('data/metrics.pickle', 'wb') as f:
+                pickle.dump(metrics_dict, f)
         
         return metrics_dict
         
@@ -221,7 +226,7 @@ if __name__ == '__main__':
     
     print(os.getcwd())
     parser = argparse.ArgumentParser(description='RTDataHandler')
-    parser.add_argument('--data_dir', type=str, default='data/processed/turin_demo_top200/history', help='General data directory')
+    parser.add_argument('--data_dir', type=str, default='data/processed/processed/turin_demo_top200/history', help='General data directory')
     parser.add_argument('--model', type=str, default='LSTMCNN', help='Model type')
     parser.add_argument('--run_id', type=str, default='e_-2024_05_08-14_28_22', help='Run ID')
     parser.add_argument('--entity', type=str, default='ignacysteam', help='Wandb entity')
@@ -229,8 +234,8 @@ if __name__ == '__main__':
     parser.add_argument('--model_tag', type=str, default='v0', help='Model tag')
     parser.add_argument('--data_normalization', type=bool, default=True, help='Data normalization')
     parser.add_argument('--slide_length', type=int, default=1, help='Slide length')
-    parser.add_argument('--nodes_count', type=int, default=200, help='Number of nodes')
-    parser.add_argument('--main_data_dir', type=str, default='data/processed/turin_demo_top200', help='General data directory')
+    parser.add_argument('--nodes_count', type=int, default=66, help='Number of nodes')
+    parser.add_argument('--main_data_dir', type=str, default='data/processed/processed/turin_demo_top200', help='General data directory')
 
     args = parser.parse_args()
 

@@ -110,7 +110,8 @@ class LitAutoEncoder(pl.LightningModule):
         gathered_idxs = [None] * torch.distributed.get_world_size()
         torch.distributed.all_gather_object(gathered_pred, self.predict_step_outputs)
         torch.distributed.all_gather_object(gathered_idxs, self.prediction_idx)
-        self.predict_outputs = np.reshape(gathered_pred, (1384, 200, 4, 60))
+        shape = np.shape(gathered_pred)
+        self.predict_outputs = np.reshape(gathered_pred, (shape[0] * shape[1], shape[2], shape[3], shape[4]))
         self.prediction_idx = list(itertools.chain.from_iterable(gathered_idxs))
 
     def on_predict_end(self) -> None:
