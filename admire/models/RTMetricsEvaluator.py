@@ -64,7 +64,7 @@ class RTMetricsEvaluator:
         self.window_size = int(model_hparams['window_size'])
         
         self.data_loader = DataLoaderService(
-            data_dir=model_config['data_dir'],
+            data_dir=model_config['data_dir'] + '/history',
             data_normalization=model_config['data_normalization'],
             window_size=self.window_size,
             slide_length=model_config['slide_length'],
@@ -231,7 +231,7 @@ class RTMetricsEvaluator:
         model = self.model_service.get_model()
 
 
-        data = Prepare_distributed_data(data_dir=self.model_config['data_dir'],
+        data = Prepare_distributed_data(data_dir=self.model_config['data_dir']+'/history',
             data_normalization=self.model_config['data_normalization'],
             window_size=self.window_size,
             slide_length=self.model_config['slide_length'],

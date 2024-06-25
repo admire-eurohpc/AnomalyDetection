@@ -45,7 +45,7 @@ class TimeSeriesDatasetv2(Dataset):
         
         # Get all filenames in data_dir
         _, _, filenames = os.walk(data_dir).__next__()
-        logging.debug(f"Found {len(filenames)} files in {data_dir}. These are: {filenames}")
+        print(f"Found {len(filenames)} files in {data_dir}. These are: {filenames}")
         
         # Sort filenames to ensure they are in order
         # TODO: Later this should be made more robust so we always know the order and which nodes are which
@@ -125,3 +125,20 @@ class TimeSeriesDatasetv2(Dataset):
     def get_dates_range(self) -> Dict[str, datetime]:
         '''Returns the start and end dates of the time series'''
         return self.dates_range
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
+
+    history_dataloader = TimeSeriesDatasetv2(
+            data_dir='data/processed/processed/turin_demo_top200/history',
+            window_size=5,
+            slide_length=1,
+            normalize=True,
+            nodes_count=66
+        )
+    
+    history = history_dataloader.get_time_series()
+    node_names = history_dataloader.get_node_names()
+    dates_range = history_dataloader.get_dates_range()
+    print(dates_range)

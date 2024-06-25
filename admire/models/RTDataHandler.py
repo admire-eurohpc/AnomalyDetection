@@ -119,7 +119,7 @@ class RTDataHandler:
         dates_range = db_dataloader.get_dates_range()
         dates_range['start'] = dates_range['start'].replace(minute=(dates_range['start'].minute+self.batch_time)%60)
         data_batch_new = data_batch[:,:,self.batch_time:]
-        self.save_dataset(data_batch_new, node_names, dates_range=dates_range, dir=os.path.join(self.data_dir, 'valid_data_updated'))
+        self.save_dataset(data_batch_new, node_names, dates_range=dates_range, dir=os.path.join(self.data_dir, 'valid_data'))
 
 
     def get_history(self) -> tuple[np.array, List, Dict[str, datetime]]:
@@ -161,7 +161,7 @@ class RTDataHandler:
         for elem, filename in zip(history, node_names):
             _df = pd.DataFrame(np.transpose(elem), columns = ['power', 'cpu1', 'cpu2', 'cpus_alloc'])
             _df['date'] = pd.date_range(dates_range['start'], dates_range['end'], freq='1min', tz='UTC')
-            _df.to_feather(os.path.join(dir, filename + '.feather'))
+            _df.to_parquet(os.path.join(dir, filename + '.parquet'))
     
     def get_metrics_from_db(self, ) -> dict:
         '''
@@ -199,22 +199,22 @@ class RTDataHandler:
     def run(self,) -> None:
         torch.multiprocessing.set_sharing_strategy('file_system')
         start = time.time()
+        if 'LOCAL_RANK' not in os.environ.keys() and 'NODE_RANK' not in os.environ.keys():
+            #get simulated db data
+            data_batch = self.get_new_data_from_db()
 
-        #get simulated db data
-        data_batch = self.get_new_data_from_db()
+            #get history data
+            history, node_names, dates_range = self.get_history()
 
-        #get history data
-        history, node_names, dates_range = self.get_history()
+            history_new = np.concatenate((history, data_batch), axis=2)
 
-        history_new = np.concatenate((history, data_batch), axis=2)
+            dates_range_new={}
+            dates_range_new['start'] = dates_range['start'].replace(hour=self.hour, minute=self.minute)
+            dates_range_new['end'] = dates_range['end'].replace(hour=self.hour, minute=self.minute)
 
-        dates_range_new={}
-        dates_range_new['start'] = dates_range['start'].replace(hour=self.hour, minute=self.minute)
-        dates_range_new['end'] = dates_range['end'].replace(hour=self.hour, minute=self.minute)
-
-        self.save_dataset(history_new[:,:,self.batch_time:], node_names, dates_range_new, os.path.join(self.data_dir, 'history_updated'))
-        
-        self.trim_db_data()
+            self.save_dataset(history_new[:,:,self.batch_time:], node_names, dates_range_new, os.path.join(self.data_dir, 'history'))
+            
+            self.trim_db_data()
 
         metrics = self.caluclate_metrics()
 
@@ -227,7 +227,6 @@ if __name__ == '__main__':
     
     print(os.getcwd())
     parser = argparse.ArgumentParser(description='RTDataHandler')
-    parser.add_argument('--data_dir', type=str, default='data/processed/processed/turin_demo_top200/history', help='General data directory')
     parser.add_argument('--model', type=str, default='LSTMCNN', help='Model type')
     parser.add_argument('--run_id', type=str, default='e_-2024_05_08-14_28_22', help='Run ID')
     parser.add_argument('--entity', type=str, default='ignacysteam', help='Wandb entity')
@@ -236,7 +235,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_normalization', type=bool, default=True, help='Data normalization')
     parser.add_argument('--slide_length', type=int, default=1, help='Slide length')
     parser.add_argument('--nodes_count', type=int, default=66, help='Number of nodes')
-    parser.add_argument('--main_data_dir', type=str, default='data/processed/processed/turin_demo_top200', help='General data directory')
+    parser.add_argument('--data_dir', type=str, default='data/processed/processed/turin_demo_top200', help='General data directory')
 
     args = parser.parse_args()
 
@@ -252,7 +251,7 @@ if __name__ == '__main__':
         'nodes_count': args.nodes_count
     }
 
-    datadir = args.main_data_dir
+    datadir = args.data_dir
     
     logger = RTDataHandler(data_dir=datadir, inference_model_config=model_config, debug_printing=True)
     logger.run()
