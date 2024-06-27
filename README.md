@@ -1,3 +1,7 @@
+# General Information
+Anomaly Detection is an independent system that provides Intelligent Controller with information about status of each node. It can detect anomalies based on cpu temperatures, power and number of allocated cpus. In case of detected anomaly system provides information about it to Intelligent Controller so the node is not considered during scheduling new jobs.
+
+System is easily scalable to train on more than 4 metrics as long as the data feeded is collected in the same manner.
 # Installation
 In case of testing Anomaly Detection system outside of Torino HPC one has to prepare virtual environment with Python >= 3.10. 
 ```
